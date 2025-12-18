@@ -159,7 +159,7 @@ cp .env.example .env
 docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-## 📚 API Documentation
+## API Documentation
 
 ### Authentication
 
@@ -229,7 +229,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 | PATCH | `/api/laporan/:id/status` | Update status (Pemilik) |
 | DELETE | `/api/laporan/:id` | Delete report |
 
-## 👤 User Roles
+## User Roles
 
 ### Pemilik (Owner/Admin)
 - Full access to all features
