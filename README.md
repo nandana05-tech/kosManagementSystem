@@ -2,7 +2,7 @@
 
 Sistem Manajemen Kost terpadu untuk mengelola properti kost, penghuni, tagihan, pembayaran, dan laporan kerusakan.
 
-## 🚀 Tech Stack
+## Tech Stack
 
 ### Backend
 - **Runtime**: Node.js + Express.js
@@ -29,7 +29,7 @@ Sistem Manajemen Kost terpadu untuk mengelola properti kost, penghuni, tagihan, 
 - **Containerization**: Docker + Docker Compose
 - **Reverse Proxy**: Nginx
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 uas-kos/
@@ -159,7 +159,7 @@ cp .env.example .env
 docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-## 📚 API Documentation
+## API Documentation
 
 ### Authentication
 
@@ -229,7 +229,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 | PATCH | `/api/laporan/:id/status` | Update status (Pemilik) |
 | DELETE | `/api/laporan/:id` | Delete report |
 
-## 👤 User Roles
+## User Roles
 
 ### Pemilik (Owner/Admin)
 - Full access to all features
@@ -243,7 +243,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 - Submit damage reports
 - Update own profile
 
-## 🔐 Test Credentials
+## Test Credentials
 
 After running seed script:
 
@@ -253,9 +253,7 @@ After running seed script:
 | Penghuni | penghuni1@example.com | password123 |
 | Penghuni | penghuni2@example.com | password123 |
 
-## 👥 Contributors
+## Contributors
 
 - Nandana Ayudya Natasakara 23.12.2903
 - Raehan Mahardika Herlambang 23.12.2884
-- Muhammad Asfihan 23.12.2876
-- Awaluddin Maghrifatullah 23.12.2896
