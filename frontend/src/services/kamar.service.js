@@ -115,6 +115,13 @@ export const kamarService = {
   bookRoom: async (kamarId, durasiSewa) => {
     return api.post(`/kamar/${kamarId}/book`, { durasiSewa });
   },
+
+  /**
+   * Extend an active rental (Penghuni self-service)
+   */
+  extendRental: async (riwayatSewaId, durasiPerpanjangan) => {
+    return api.post(`/kamar/rental/${riwayatSewaId}/extend`, { durasiPerpanjangan });
+  },
 };
 
 export default kamarService;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useLaporanStore } from '../../features/laporan/laporanStore';
 import { useAuthStore } from '../../features/auth/authStore';
@@ -53,6 +53,45 @@ const LaporanList = () => {
     const [statusModal, setStatusModal] = useState({ show: false, laporan: null });
     const [isDeleting, setIsDeleting] = useState(false);
     const [newStatus, setNewStatus] = useState('');
+    const [dropdownStyle, setDropdownStyle] = useState({});
+    const buttonRefs = useRef({});
+
+    // Calculate dropdown position based on viewport - returns style object for fixed positioning
+    const calculateDropdownPosition = useCallback((buttonElement) => {
+        if (!buttonElement) return {};
+
+        const rect = buttonElement.getBoundingClientRect();
+        const dropdownHeight = 200; // Approximate dropdown height
+        const dropdownWidth = 160;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        const style = {
+            position: 'fixed',
+            right: window.innerWidth - rect.right,
+            minWidth: dropdownWidth,
+            zIndex: 9999
+        };
+
+        // If not enough space below and more space above, show above
+        if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+            style.bottom = window.innerHeight - rect.top + 4;
+        } else {
+            style.top = rect.bottom + 4;
+        }
+
+        return style;
+    }, []);
+
+    const handleDropdownToggle = (itemId) => {
+        if (activeDropdown === itemId) {
+            setActiveDropdown(null);
+        } else {
+            const style = calculateDropdownPosition(buttonRefs.current[itemId]);
+            setDropdownStyle(style);
+            setActiveDropdown(itemId);
+        }
+    };
 
     useEffect(() => {
         if (isPemilik) {
@@ -284,12 +323,12 @@ const LaporanList = () => {
                                     <div className="flex-1">
                                         <div className="flex items-start gap-4">
                                             <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${item.prioritas === 'URGENT' ? 'bg-red-100' :
-                                                    item.prioritas === 'TINGGI' ? 'bg-orange-100' :
-                                                        item.prioritas === 'NORMAL' ? 'bg-blue-100' : 'bg-gray-100'
+                                                item.prioritas === 'TINGGI' ? 'bg-orange-100' :
+                                                    item.prioritas === 'NORMAL' ? 'bg-blue-100' : 'bg-gray-100'
                                                 }`}>
                                                 <HiExclamation className={`w-6 h-6 ${item.prioritas === 'URGENT' ? 'text-red-600' :
-                                                        item.prioritas === 'TINGGI' ? 'text-orange-600' :
-                                                            item.prioritas === 'NORMAL' ? 'text-blue-600' : 'text-gray-600'
+                                                    item.prioritas === 'TINGGI' ? 'text-orange-600' :
+                                                        item.prioritas === 'NORMAL' ? 'text-blue-600' : 'text-gray-600'
                                                     }`} />
                                             </div>
                                             <div className="flex-1 min-w-0">
@@ -327,14 +366,18 @@ const LaporanList = () => {
 
                                         <div className="relative">
                                             <button
-                                                onClick={() => setActiveDropdown(activeDropdown === item.id ? null : item.id)}
+                                                ref={(el) => buttonRefs.current[item.id] = el}
+                                                onClick={() => handleDropdownToggle(item.id)}
                                                 className="p-2 hover:bg-gray-100 rounded-lg"
                                             >
                                                 <HiDotsVertical className="w-5 h-5 text-gray-500" />
                                             </button>
 
                                             {activeDropdown === item.id && (
-                                                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[160px]">
+                                                <div
+                                                    style={dropdownStyle}
+                                                    className="bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]"
+                                                >
                                                     <Link
                                                         to={`/laporan/${item.id}`}
                                                         className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -415,8 +458,8 @@ const LaporanList = () => {
                                     key={page}
                                     onClick={() => handlePageChange(page)}
                                     className={`w-10 h-10 rounded-lg font-medium ${page === meta.page
-                                            ? 'bg-primary-600 text-white'
-                                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                                         }`}
                                 >
                                     {page}
@@ -510,7 +553,7 @@ const LaporanList = () => {
 
             {/* Click outside to close dropdown */}
             {activeDropdown && (
-                <div className="fixed inset-0 z-0" onClick={() => setActiveDropdown(null)} />
+                <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
             )}
         </div>
     );

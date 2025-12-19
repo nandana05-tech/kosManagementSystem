@@ -48,7 +48,7 @@ const LaporanForm = () => {
                     await fetchKamar({ limit: 100 });
                 } else if (user?.id) {
                     // Penghuni: fetch rooms from their active riwayatSewa
-                    const response = await userService.getRiwayatSewa(user.id);
+                    const response = await userService.getMyRiwayatSewa();
                     if (response.data && Array.isArray(response.data)) {
                         // Extract kamar from riwayatSewa
                         const rentedRooms = response.data

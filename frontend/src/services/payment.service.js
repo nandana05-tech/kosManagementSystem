@@ -49,6 +49,13 @@ export const paymentService = {
   cancel: async (id) => {
     return api.post(`/payment/${id}/cancel`);
   },
+
+  /**
+   * Get payment summary
+   */
+  getSummary: async () => {
+    return api.get('/payment/summary');
+  },
 };
 
 export default paymentService;

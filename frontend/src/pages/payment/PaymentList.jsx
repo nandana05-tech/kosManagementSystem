@@ -27,6 +27,7 @@ const PaymentList = () => {
     const [payments, setPayments] = useState([]);
     const [meta, setMeta] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [summary, setSummary] = useState({ total: 0, success: 0, pending: 0, failed: 0 });
     const [filters, setFilters] = useState({
         status: '',
         page: 1,
@@ -49,6 +50,15 @@ const PaymentList = () => {
             toast.error(error.message || 'Gagal memuat data pembayaran');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const fetchSummary = async () => {
+        try {
+            const response = await paymentService.getSummary();
+            setSummary(response.data || { total: 0, success: 0, pending: 0, failed: 0 });
+        } catch (error) {
+            console.error('Error fetching summary:', error);
         }
     };
 
@@ -92,6 +102,7 @@ const PaymentList = () => {
 
     useEffect(() => {
         fetchPayments();
+        fetchSummary();
     }, [filters, searchParams]);
 
     const handleFilterChange = (key, value) => {
@@ -158,13 +169,6 @@ const PaymentList = () => {
         }
     };
 
-    // Calculate summary
-    const summary = {
-        total: payments.length,
-        success: payments.filter(p => p.status === 'SUCCESS').length,
-        pending: payments.filter(p => p.status === 'PENDING').length,
-        failed: payments.filter(p => ['FAILED', 'EXPIRED', 'CANCEL'].includes(p.status)).length
-    };
 
     return (
         <div>

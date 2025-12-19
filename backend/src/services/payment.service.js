@@ -153,7 +153,11 @@ const handleMidtransNotification = async (notification) => {
 
   const payment = await prisma.payment.findUnique({
     where: { kodePembayaran: orderId },
-    include: { user: true, tagihan: true }
+    include: { 
+      user: true, 
+      tagihan: true,
+      riwayatSewa: { include: { kamar: true } }
+    }
   });
 
   if (!payment) {
@@ -174,25 +178,55 @@ const handleMidtransNotification = async (notification) => {
     status = 'EXPIRED';
   }
 
-  // Update payment
-  await prisma.payment.update({
-    where: { id: payment.id },
-    data: {
-      status,
-      paidAt,
-      transactionId: notification.transaction_id,
-      paymentMethod: notification.payment_type,
-      vaNumber: notification.va_numbers?.[0]?.va_number,
-      bank: notification.va_numbers?.[0]?.bank
-    }
-  });
-
-  // If success, update tagihan status
+  // Handle based on status
   if (status === 'SUCCESS') {
+    // Update payment
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status,
+        paidAt,
+        transactionId: notification.transaction_id,
+        paymentMethod: notification.payment_type,
+        vaNumber: notification.va_numbers?.[0]?.va_number,
+        bank: notification.va_numbers?.[0]?.bank
+      }
+    });
+
+    // Update tagihan status
     await prisma.tagihan.update({
       where: { id: payment.tagihanId },
       data: { status: 'LUNAS' }
     });
+
+    // Check if this is an extension payment - update tanggalBerakhir after payment success
+    const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
+    if (isExtension && payment.riwayatSewaId) {
+      const keterangan = payment.tagihan?.keterangan || '';
+      const durationMatch = keterangan.match(/untuk (\d+) bulan/);
+      const extensionMonths = durationMatch ? parseInt(durationMatch[1]) : 0;
+      
+      if (extensionMonths > 0) {
+        const currentSewa = await prisma.riwayatSewa.findUnique({
+          where: { id: payment.riwayatSewaId }
+        });
+        
+        if (currentSewa) {
+          const currentEndDate = new Date(currentSewa.tanggalBerakhir);
+          currentEndDate.setMonth(currentEndDate.getMonth() + extensionMonths);
+          
+          await prisma.riwayatSewa.update({
+            where: { id: payment.riwayatSewaId },
+            data: { 
+              tanggalBerakhir: currentEndDate,
+              durasiBulan: (currentSewa.durasiBulan || 0) + extensionMonths
+            }
+          });
+          
+          console.log(`Extension payment success: Extended ${extensionMonths} months for riwayatSewa ${payment.riwayatSewaId}`);
+        }
+      }
+    }
 
     // Send email notification
     try {
@@ -205,6 +239,81 @@ const handleMidtransNotification = async (notification) => {
     } catch (error) {
       console.error('Failed to send payment notification:', error);
     }
+  } else if (status === 'FAILED' || status === 'EXPIRED') {
+    // Check if this is an extension payment
+    const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
+    
+    if (isExtension) {
+      // Extension cancellation: Delete payment and tagihan, revert duration (don't change riwayatSewa status)
+      await prisma.$transaction(async (tx) => {
+        // 1. Delete payment first (references tagihan)
+        await tx.payment.delete({
+          where: { id: payment.id }
+        });
+
+        // 2. Delete tagihan
+        if (payment.tagihanId) {
+          await tx.tagihan.delete({
+            where: { id: payment.tagihanId }
+          });
+        }
+
+        // Note: No need to revert tanggalBerakhir as it hasn't been updated yet
+        // (tanggalBerakhir is only updated after payment success)
+      });
+      
+      console.log(`Extension payment ${orderId} ${status}: Payment and tagihan deleted`);
+    } else {
+      // New booking cancellation: Delete both payment and tagihan
+      await prisma.$transaction(async (tx) => {
+        // 1. Delete payment first (references tagihan)
+        await tx.payment.delete({
+          where: { id: payment.id }
+        });
+
+        // 2. Delete tagihan
+        if (payment.tagihanId) {
+          await tx.tagihan.delete({
+            where: { id: payment.tagihanId }
+          });
+        }
+
+        // 3. Set riwayatSewa status to SELESAI
+        if (payment.riwayatSewaId) {
+          await tx.riwayatSewa.update({
+            where: { id: payment.riwayatSewaId },
+            data: { 
+              status: 'SELESAI',
+              tanggalBerakhir: new Date()
+            }
+          });
+
+          // Update kamar to TERSEDIA
+          if (payment.riwayatSewa?.kamarId) {
+            await tx.kamar.update({
+              where: { id: payment.riwayatSewa.kamarId },
+              data: { status: 'TERSEDIA' }
+            });
+          }
+          
+          console.log(`Booking cancelled: riwayatSewa ${payment.riwayatSewaId} set to SELESAI`);
+        }
+      });
+
+      console.log(`Booking payment ${orderId} ${status}: Payment and tagihan deleted`);
+    }
+  } else {
+    // PENDING status - just update payment
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status,
+        transactionId: notification.transaction_id,
+        paymentMethod: notification.payment_type,
+        vaNumber: notification.va_numbers?.[0]?.va_number,
+        bank: notification.va_numbers?.[0]?.bank
+      }
+    });
   }
 
   return { message: 'Notification processed' };
@@ -283,7 +392,11 @@ const syncPaymentStatus = async (orderId) => {
   // Find payment by orderId (kodePembayaran)
   const payment = await prisma.payment.findUnique({
     where: { kodePembayaran: orderId },
-    include: { tagihan: true, user: true }
+    include: { 
+      tagihan: true, 
+      user: true,
+      riwayatSewa: { include: { kamar: true } }
+    }
   });
 
   if (!payment) {
@@ -315,29 +428,142 @@ const syncPaymentStatus = async (orderId) => {
       status = 'EXPIRED';
     }
 
-    // Update payment
-    const updatedPayment = await prisma.payment.update({
-      where: { id: payment.id },
-      data: {
-        status,
-        paidAt,
-        paymentMethod: midtransStatus.payment_type
-      }
-    });
-
-    // If success, update tagihan status
+    // Handle based on status
     if (status === 'SUCCESS') {
+      // Update payment
+      const updatedPayment = await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status,
+          paidAt,
+          paymentMethod: midtransStatus.payment_type
+        }
+      });
+
+      // Update tagihan status
       await prisma.tagihan.update({
         where: { id: payment.tagihanId },
         data: { status: 'LUNAS' }
       });
-    }
 
-    return { 
-      message: status === 'SUCCESS' ? 'Pembayaran berhasil diverifikasi' : `Status pembayaran: ${status}`,
-      payment: updatedPayment,
-      midtransStatus: transactionStatus
-    };
+      // Check if this is an extension payment - update tanggalBerakhir after payment success
+      const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
+      if (isExtension && payment.riwayatSewaId) {
+        const keterangan = payment.tagihan?.keterangan || '';
+        const durationMatch = keterangan.match(/untuk (\d+) bulan/);
+        const extensionMonths = durationMatch ? parseInt(durationMatch[1]) : 0;
+        
+        if (extensionMonths > 0) {
+          const currentSewa = await prisma.riwayatSewa.findUnique({
+            where: { id: payment.riwayatSewaId }
+          });
+          
+          if (currentSewa) {
+            const currentEndDate = new Date(currentSewa.tanggalBerakhir);
+            currentEndDate.setMonth(currentEndDate.getMonth() + extensionMonths);
+            
+            await prisma.riwayatSewa.update({
+              where: { id: payment.riwayatSewaId },
+              data: { 
+                tanggalBerakhir: currentEndDate,
+                durasiBulan: (currentSewa.durasiBulan || 0) + extensionMonths
+              }
+            });
+            
+            console.log(`Extension payment success (sync): Extended ${extensionMonths} months`);
+          }
+        }
+      }
+
+      return { 
+        message: 'Pembayaran berhasil diverifikasi',
+        payment: updatedPayment,
+        midtransStatus: transactionStatus
+      };
+    } else if (status === 'FAILED' || status === 'EXPIRED') {
+      // Check if this is an extension payment
+      const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
+
+      if (isExtension) {
+        // Extension cancellation: Delete payment and tagihan, revert duration (don't change status)
+        await prisma.$transaction(async (tx) => {
+          // 1. Delete payment first (references tagihan)
+          await tx.payment.delete({
+            where: { id: payment.id }
+          });
+
+          // 2. Delete tagihan
+          if (payment.tagihanId) {
+            await tx.tagihan.delete({
+              where: { id: payment.tagihanId }
+            });
+          }
+
+          // Note: No need to revert tanggalBerakhir as it hasn't been updated yet
+          // (tanggalBerakhir is only updated after payment success)
+        });
+
+        return { 
+          message: `Pembayaran perpanjangan ${status === 'FAILED' ? 'dibatalkan' : 'kadaluarsa'}.`,
+          deleted: true,
+          midtransStatus: transactionStatus
+        };
+      } else {
+        // New booking cancellation: Delete both payment and tagihan
+        await prisma.$transaction(async (tx) => {
+          // 1. Delete payment first
+          await tx.payment.delete({
+            where: { id: payment.id }
+          });
+
+          // 2. Delete tagihan
+          if (payment.tagihanId) {
+            await tx.tagihan.delete({
+              where: { id: payment.tagihanId }
+            });
+          }
+
+          // 3. Set riwayatSewa status to SELESAI
+          if (payment.riwayatSewaId) {
+            await tx.riwayatSewa.update({
+              where: { id: payment.riwayatSewaId },
+              data: { 
+                status: 'SELESAI',
+                tanggalBerakhir: new Date()
+              }
+            });
+
+            if (payment.riwayatSewa?.kamarId) {
+              await tx.kamar.update({
+                where: { id: payment.riwayatSewa.kamarId },
+                data: { status: 'TERSEDIA' }
+              });
+            }
+          }
+        });
+
+        return { 
+          message: `Pembayaran ${status === 'FAILED' ? 'dibatalkan' : 'kadaluarsa'}. Tagihan dan sewa dihapus.`,
+          deleted: true,
+          midtransStatus: transactionStatus
+        };
+      }
+    } else {
+      // PENDING status - just update payment
+      const updatedPayment = await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status,
+          paymentMethod: midtransStatus.payment_type
+        }
+      });
+
+      return { 
+        message: `Status pembayaran: ${status}`,
+        payment: updatedPayment,
+        midtransStatus: transactionStatus
+      };
+    }
   } catch (error) {
     console.error('Error syncing payment status:', error);
     // If Midtrans API fails, return current status
@@ -376,39 +602,89 @@ const cancelPayment = async (paymentId, userId, role) => {
     throw { statusCode: 403, message: 'Tidak memiliki akses untuk membatalkan pembayaran ini' };
   }
 
-  // Use transaction to delete payment, tagihan, and update related records
-  await prisma.$transaction(async (tx) => {
-    // 1. Delete payment first (references tagihan)
-    await tx.payment.delete({
-      where: { id: parseInt(paymentId) }
-    });
+  // Check if this is an extension payment
+  const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
 
-    // 2. Delete tagihan
-    await tx.tagihan.delete({
-      where: { id: payment.tagihanId }
-    });
-
-    // 3. Update riwayatSewa to SELESAI if exists
-    if (payment.riwayatSewaId) {
-      await tx.riwayatSewa.update({
-        where: { id: payment.riwayatSewaId },
-        data: { 
-          status: 'SELESAI',
-          tanggalBerakhir: new Date()
-        }
+  if (isExtension) {
+    // Extension cancellation: Delete payment and tagihan (no need to revert dates)
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete payment first (references tagihan)
+      await tx.payment.delete({
+        where: { id: parseInt(paymentId) }
       });
 
-      // 4. Update kamar to TERSEDIA
-      if (payment.riwayatSewa?.kamarId) {
-        await tx.kamar.update({
-          where: { id: payment.riwayatSewa.kamarId },
-          data: { status: 'TERSEDIA' }
+      // 2. Delete tagihan
+      if (payment.tagihanId) {
+        await tx.tagihan.delete({
+          where: { id: payment.tagihanId }
         });
       }
-    }
-  });
 
-  return { message: 'Pembayaran berhasil dibatalkan' };
+      // Note: No need to revert tanggalBerakhir as it hasn't been updated yet
+      // (tanggalBerakhir is only updated after payment success)
+    });
+
+    return { message: 'Perpanjangan sewa berhasil dibatalkan.' };
+  } else {
+    // New booking cancellation: Delete both payment and tagihan
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete payment first (references tagihan)
+      await tx.payment.delete({
+        where: { id: parseInt(paymentId) }
+      });
+
+      // 2. Delete tagihan
+      if (payment.tagihanId) {
+        await tx.tagihan.delete({
+          where: { id: payment.tagihanId }
+        });
+      }
+
+      // 3. Update riwayatSewa to SELESAI
+      if (payment.riwayatSewaId) {
+        await tx.riwayatSewa.update({
+          where: { id: payment.riwayatSewaId },
+          data: { 
+            status: 'SELESAI',
+            tanggalBerakhir: new Date()
+          }
+        });
+
+        // 4. Update kamar to TERSEDIA
+        if (payment.riwayatSewa?.kamarId) {
+          await tx.kamar.update({
+            where: { id: payment.riwayatSewa.kamarId },
+            data: { status: 'TERSEDIA' }
+          });
+        }
+      }
+    });
+
+    return { message: 'Pembayaran berhasil dibatalkan' };
+  }
+};
+
+/**
+ * Get payment summary (counts by status)
+ */
+const getPaymentSummary = async (userId = null, role = null) => {
+  const where = role === 'PENGHUNI' ? { userId } : {};
+
+  const [total, success, pending, failed, expired, cancel] = await Promise.all([
+    prisma.payment.count({ where }),
+    prisma.payment.count({ where: { ...where, status: 'SUCCESS' } }),
+    prisma.payment.count({ where: { ...where, status: 'PENDING' } }),
+    prisma.payment.count({ where: { ...where, status: 'FAILED' } }),
+    prisma.payment.count({ where: { ...where, status: 'EXPIRED' } }),
+    prisma.payment.count({ where: { ...where, status: 'CANCEL' } })
+  ]);
+
+  return {
+    total,
+    success,
+    pending,
+    failed: failed + expired + cancel
+  };
 };
 
 module.exports = {
@@ -419,5 +695,6 @@ module.exports = {
   verifyPayment,
   checkPaymentStatus,
   syncPaymentStatus,
-  cancelPayment
+  cancelPayment,
+  getPaymentSummary
 };

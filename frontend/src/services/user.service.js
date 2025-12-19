@@ -64,6 +64,13 @@ export const userService = {
   getRiwayatSewa: async (id) => {
     return api.get(`/users/${id}/riwayat-sewa`);
   },
+
+  /**
+   * Get own riwayat sewa (for Penghuni)
+   */
+  getMyRiwayatSewa: async () => {
+    return api.get('/users/my-riwayat-sewa');
+  },
 };
 
 export default userService;

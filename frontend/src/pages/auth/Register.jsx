@@ -9,6 +9,7 @@ const Register = () => {
     const navigate = useNavigate();
     const { register: registerUser, isLoading } = useAuthStore();
     const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     const {
         register,
@@ -125,14 +126,21 @@ const Register = () => {
                     <div className="relative">
                         <HiLockClosed className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                         <input
-                            type={showPassword ? 'text' : 'password'}
-                            className={`input pl-10 ${errors.confirmPassword ? 'input-error' : ''}`}
+                            type={showConfirmPassword ? 'text' : 'password'}
+                            className={`input pl-10 pr-10 ${errors.confirmPassword ? 'input-error' : ''}`}
                             placeholder="Ulangi password"
                             {...register('confirmPassword', {
                                 required: 'Konfirmasi password wajib diisi',
                                 validate: (value) => value === password || 'Password tidak cocok',
                             })}
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                            {showConfirmPassword ? <HiEyeOff className="w-5 h-5" /> : <HiEye className="w-5 h-5" />}
+                        </button>
                     </div>
                     {errors.confirmPassword && (
                         <p className="error-message">{errors.confirmPassword.message}</p>

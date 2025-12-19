@@ -17,6 +17,9 @@ router.use(authenticate);
 // Profile routes (accessible by all authenticated users)
 router.put('/profile', uploadProfilePhoto, validateZod(updateProfileSchema), userController.updateProfile);
 
+// Route for penghuni to get their own riwayat sewa
+router.get('/my-riwayat-sewa', userController.getMyRiwayatSewa);
+
 // Pemilik only routes
 router.get('/', isPemilik, userController.getAllUsers);
 router.get('/:id', isPemilik, userController.getUserById);

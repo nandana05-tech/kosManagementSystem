@@ -105,6 +105,19 @@ const getUserRiwayatSewa = async (req, res, next) => {
   }
 };
 
+/**
+ * Get own riwayat sewa (for Penghuni)
+ * GET /api/users/my-riwayat-sewa
+ */
+const getMyRiwayatSewa = async (req, res, next) => {
+  try {
+    const riwayatSewa = await userService.getUserRiwayatSewa(req.user.id);
+    return success(res, 'Berhasil mendapatkan riwayat sewa', riwayatSewa);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -113,5 +126,6 @@ module.exports = {
   updateProfile,
   deleteUser,
   toggleUserStatus,
-  getUserRiwayatSewa
+  getUserRiwayatSewa,
+  getMyRiwayatSewa
 };

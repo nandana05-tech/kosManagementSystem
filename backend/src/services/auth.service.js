@@ -115,17 +115,24 @@ const verifyEmail = async (token) => {
   });
 
   if (!user) {
-    throw { statusCode: 400, message: 'Token verifikasi tidak valid atau sudah digunakan' };
+    // Token not found - could be already used or invalid
+    // Return a more helpful message
+    throw { 
+      statusCode: 400, 
+      message: 'Token verifikasi tidak valid atau sudah digunakan. Jika Anda sudah pernah verifikasi, silakan langsung login.',
+      alreadyVerified: true
+    };
   }
 
   if (user.isActive) {
-    return { message: 'Email sudah diverifikasi sebelumnya' };
+    return { message: 'Email sudah diverifikasi sebelumnya', alreadyVerified: true };
   }
 
   await prisma.user.update({
     where: { id: user.id },
     data: {
       isActive: true,
+      emailVerifiedAt: new Date(),
       verificationToken: null
     }
   });

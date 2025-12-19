@@ -210,6 +210,24 @@ const bookKamar = async (req, res, next) => {
   }
 };
 
+/**
+ * Extend an active rental
+ * POST /api/kamar/rental/:riwayatSewaId/extend
+ */
+const extendRental = async (req, res, next) => {
+  try {
+    const bookingService = require('../services/booking.service');
+    const result = await bookingService.extendRental(
+      req.params.riwayatSewaId,
+      req.body.durasiPerpanjangan,
+      req.user.id
+    );
+    return success(res, 'Sewa berhasil diperpanjang', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   // Kategori
   getAllKategori,
@@ -229,5 +247,6 @@ module.exports = {
   addFasilitas,
   deleteFasilitas,
   // Booking
-  bookKamar
+  bookKamar,
+  extendRental
 };

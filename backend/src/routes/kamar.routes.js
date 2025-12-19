@@ -10,7 +10,8 @@ const {
   updateKategoriKamarSchema,
   createKamarSchema,
   updateKamarSchema,
-  createFasilitasSchema
+  createFasilitasSchema,
+  extendRentalSchema
 } = require('../validations/kamar.validation');
 
 // ==================== KATEGORI ROUTES ====================
@@ -27,6 +28,10 @@ router.delete('/fasilitas/:fasilitasId', authenticate, isPemilik, kamarControlle
 
 // ==================== PHOTO ROUTES ====================
 router.delete('/photos/:photoId', authenticate, isPemilik, kamarController.deleteKamarPhoto);
+
+// ==================== RENTAL EXTENSION ROUTES ====================
+// Penghuni: extend active rental
+router.post('/rental/:riwayatSewaId/extend', authenticate, validateZod(extendRentalSchema), kamarController.extendRental);
 
 // ==================== KAMAR ROUTES ====================
 // Public/Optional auth: view kamar

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTagihanStore } from '../../features/tagihan/tagihanStore';
 import { useAuthStore } from '../../features/auth/authStore';
@@ -54,6 +54,33 @@ const TagihanList = () => {
     const [deleteModal, setDeleteModal] = useState({ show: false, tagihan: null });
     const [isDeleting, setIsDeleting] = useState(false);
     const [payingId, setPayingId] = useState(null);
+    const [dropdownPosition, setDropdownPosition] = useState('below');
+    const buttonRefs = useRef({});
+
+    // Calculate dropdown position based on viewport
+    const calculateDropdownPosition = useCallback((buttonElement) => {
+        if (!buttonElement) return 'below';
+
+        const rect = buttonElement.getBoundingClientRect();
+        const dropdownHeight = 140; // Approximate dropdown height
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+            return 'above';
+        }
+        return 'below';
+    }, []);
+
+    const handleDropdownToggle = (itemId) => {
+        if (activeDropdown === itemId) {
+            setActiveDropdown(null);
+        } else {
+            const position = calculateDropdownPosition(buttonRefs.current[itemId]);
+            setDropdownPosition(position);
+            setActiveDropdown(itemId);
+        }
+    };
 
     // Check for payment return from Midtrans
     useEffect(() => {
@@ -403,14 +430,15 @@ const TagihanList = () => {
                                                 {isPemilik && (
                                                     <div className="relative">
                                                         <button
-                                                            onClick={() => setActiveDropdown(activeDropdown === item.id ? null : item.id)}
+                                                            ref={(el) => buttonRefs.current[item.id] = el}
+                                                            onClick={() => handleDropdownToggle(item.id)}
                                                             className="p-2 hover:bg-gray-100 rounded-lg"
                                                         >
                                                             <HiDotsVertical className="w-5 h-5 text-gray-500" />
                                                         </button>
 
                                                         {activeDropdown === item.id && (
-                                                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[140px]">
+                                                            <div className={`absolute right-0 ${dropdownPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'} bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[140px]`}>
                                                                 <Link
                                                                     to={`/tagihan/${item.id}`}
                                                                     className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -542,7 +570,7 @@ const TagihanList = () => {
 
             {/* Click outside to close dropdown */}
             {activeDropdown && (
-                <div className="fixed inset-0 z-0" onClick={() => setActiveDropdown(null)} />
+                <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
             )}
         </div>
     );

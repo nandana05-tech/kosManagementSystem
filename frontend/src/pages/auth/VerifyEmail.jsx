@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { authService } from '../../services/auth.service';
-import { HiCheckCircle, HiXCircle } from 'react-icons/hi';
+import { HiCheckCircle, HiXCircle, HiInformationCircle } from 'react-icons/hi';
 
 const VerifyEmail = () => {
     const [searchParams] = useSearchParams();
     const token = searchParams.get('token');
 
-    const [status, setStatus] = useState('loading'); // loading, success, error
+    const [status, setStatus] = useState('loading'); // loading, success, info, error
     const [message, setMessage] = useState('');
 
     useEffect(() => {
@@ -19,12 +19,23 @@ const VerifyEmail = () => {
             }
 
             try {
-                await authService.verifyEmail(token);
-                setStatus('success');
-                setMessage('Email berhasil diverifikasi!');
+                const response = await authService.verifyEmail(token);
+                if (response.data?.alreadyVerified) {
+                    setStatus('info');
+                    setMessage(response.data?.message || 'Email sudah diverifikasi sebelumnya');
+                } else {
+                    setStatus('success');
+                    setMessage('Email berhasil diverifikasi!');
+                }
             } catch (error) {
-                setStatus('error');
-                setMessage(error.message || 'Gagal memverifikasi email');
+                // Check if this is "already verified" error
+                if (error.message?.includes('sudah') && error.message?.includes('login')) {
+                    setStatus('info');
+                    setMessage('Email kemungkinan sudah diverifikasi. Silakan langsung login.');
+                } else {
+                    setStatus('error');
+                    setMessage(error.message || 'Gagal memverifikasi email');
+                }
             }
         };
 
@@ -55,6 +66,21 @@ const VerifyEmail = () => {
         );
     }
 
+    if (status === 'info') {
+        return (
+            <div className="text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <HiInformationCircle className="w-8 h-8 text-blue-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Email Sudah Diverifikasi</h2>
+                <p className="text-gray-600 mb-6">{message}</p>
+                <Link to="/login" className="btn-primary">
+                    Login Sekarang
+                </Link>
+            </div>
+        );
+    }
+
     return (
         <div className="text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -70,3 +96,4 @@ const VerifyEmail = () => {
 };
 
 export default VerifyEmail;
+

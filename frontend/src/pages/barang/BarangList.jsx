@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useBarangStore } from '../../features/barang/barangStore';
 import { useAuthStore } from '../../features/auth/authStore';
@@ -47,6 +47,44 @@ const BarangList = () => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDeletingKategori, setIsDeletingKategori] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [dropdownStyle, setDropdownStyle] = useState({});
+    const buttonRefs = useRef({});
+
+    // Calculate dropdown position based on viewport - returns style object for fixed positioning
+    const calculateDropdownPosition = useCallback((buttonElement) => {
+        if (!buttonElement) return {};
+
+        const rect = buttonElement.getBoundingClientRect();
+        const dropdownHeight = 120;
+        const dropdownWidth = 140;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        const style = {
+            position: 'fixed',
+            right: window.innerWidth - rect.right,
+            minWidth: dropdownWidth,
+            zIndex: 9999
+        };
+
+        if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+            style.bottom = window.innerHeight - rect.top + 4;
+        } else {
+            style.top = rect.bottom + 4;
+        }
+
+        return style;
+    }, []);
+
+    const handleDropdownToggle = (itemId) => {
+        if (activeDropdown === itemId) {
+            setActiveDropdown(null);
+        } else {
+            const style = calculateDropdownPosition(buttonRefs.current[itemId]);
+            setDropdownStyle(style);
+            setActiveDropdown(itemId);
+        }
+    };
 
     useEffect(() => {
         fetchKategori();
@@ -212,7 +250,7 @@ const BarangList = () => {
                                                     <HiCube className="w-5 h-5 text-gray-500" />
                                                 </div>
                                                 <div>
-                                                    <p className="font-medium text-gray-900">{item.namaBarang?.nama || item.nama || 'N/A'}</p>
+                                                    <p className="font-medium text-gray-900">{item.namaBarang?.namaBarang || 'N/A'}</p>
                                                     {item.keterangan && (
                                                         <p className="text-sm text-gray-500 truncate max-w-[200px]">{item.keterangan}</p>
                                                     )}
@@ -246,21 +284,41 @@ const BarangList = () => {
                                         </td>
                                         {isPemilik && (
                                             <td className="px-4 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <Link
-                                                        to={`/barang/${item.id}/edit`}
-                                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                        title="Edit"
-                                                    >
-                                                        <HiPencil className="w-4 h-4" />
-                                                    </Link>
+                                                <div className="relative inline-block">
                                                     <button
-                                                        onClick={() => setDeleteModal({ show: true, barang: item })}
-                                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Hapus"
+                                                        ref={(el) => buttonRefs.current[item.id] = el}
+                                                        onClick={() => handleDropdownToggle(item.id)}
+                                                        className="p-2 hover:bg-gray-100 rounded-lg"
                                                     >
-                                                        <HiTrash className="w-4 h-4" />
+                                                        <HiDotsVertical className="w-5 h-5 text-gray-500" />
                                                     </button>
+
+                                                    {activeDropdown === item.id && (
+                                                        <div
+                                                            style={dropdownStyle}
+                                                            className="bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]"
+                                                        >
+                                                            <Link
+                                                                to={`/barang/${item.id}/edit`}
+                                                                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                                onClick={() => setActiveDropdown(null)}
+                                                            >
+                                                                <HiPencil className="w-4 h-4" />
+                                                                Edit
+                                                            </Link>
+                                                            <hr className="my-1" />
+                                                            <button
+                                                                onClick={() => {
+                                                                    setDeleteModal({ show: true, barang: item });
+                                                                    setActiveDropdown(null);
+                                                                }}
+                                                                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                                            >
+                                                                <HiTrash className="w-4 h-4" />
+                                                                Hapus
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </td>
                                         )}
@@ -443,7 +501,7 @@ const BarangList = () => {
 
             {/* Click outside to close dropdown */}
             {activeDropdown && (
-                <div className="fixed inset-0 z-[5]" onClick={() => setActiveDropdown(null)} />
+                <div className="fixed inset-0 z-[9998]" onClick={() => setActiveDropdown(null)} />
             )}
         </div>
     );

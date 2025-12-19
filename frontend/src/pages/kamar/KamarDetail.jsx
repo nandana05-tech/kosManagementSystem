@@ -19,7 +19,9 @@ import {
     HiChevronLeft,
     HiChevronRight,
     HiShoppingCart,
-    HiCreditCard
+    HiCreditCard,
+    HiRefresh,
+    HiCalendar
 } from 'react-icons/hi';
 
 const KamarDetail = () => {
@@ -44,6 +46,16 @@ const KamarDetail = () => {
     const [durasiSewa, setDurasiSewa] = useState(1);
     const [isBooking, setIsBooking] = useState(false);
     const [showBookingConfirm, setShowBookingConfirm] = useState(false);
+
+    // Extend rental state
+    const [showExtendModal, setShowExtendModal] = useState(false);
+    const [durasiPerpanjangan, setDurasiPerpanjangan] = useState(1);
+    const [isExtending, setIsExtending] = useState(false);
+
+    // Find current user's active rental for this room
+    const myActiveRental = kamar?.riwayatSewa?.find(
+        sewa => sewa.userId === user?.id && sewa.status === 'AKTIF'
+    );
 
     useEffect(() => {
         if (id) {
@@ -124,7 +136,43 @@ const KamarDetail = () => {
         }
     };
 
+    const handleExtendRental = async () => {
+        if (!myActiveRental) return;
+
+        setIsExtending(true);
+        try {
+            // Step 1: Extend rental and create tagihan
+            const response = await kamarService.extendRental(myActiveRental.id, durasiPerpanjangan);
+            const tagihanId = response.data?.tagihan?.id;
+
+            if (!tagihanId) {
+                throw new Error('Gagal membuat tagihan perpanjangan');
+            }
+
+            toast.success('Perpanjangan berhasil! Melanjutkan ke pembayaran...');
+
+            // Step 2: Create payment and redirect to Midtrans
+            const paymentResponse = await paymentService.create({ tagihanId });
+
+            if (paymentResponse.data?.redirectUrl) {
+                window.location.href = paymentResponse.data.redirectUrl;
+            } else if (paymentResponse.data?.snapRedirectUrl) {
+                window.location.href = paymentResponse.data.snapRedirectUrl;
+            } else {
+                // Fallback: Redirect to tagihan page to pay later
+                toast.info('Silakan lakukan pembayaran di halaman tagihan');
+                navigate('/tagihan');
+            }
+        } catch (error) {
+            toast.error(error.message || 'Gagal memperpanjang sewa');
+        } finally {
+            setIsExtending(false);
+            setShowExtendModal(false);
+        }
+    };
+
     const totalHarga = kamar?.hargaPerBulan ? parseFloat(kamar.hargaPerBulan) * durasiSewa : 0;
+    const totalPerpanjangan = kamar?.hargaPerBulan ? parseFloat(kamar.hargaPerBulan) * durasiPerpanjangan : 0;
 
     const nextPhoto = () => {
         if (kamar?.fotoKamar?.length > 0) {
@@ -505,13 +553,59 @@ const KamarDetail = () => {
                     )}
 
                     {/* Room Not Available Notice for Penghuni */}
-                    {isPenghuni && kamar.status !== 'TERSEDIA' && (
+                    {isPenghuni && kamar.status !== 'TERSEDIA' && !myActiveRental && (
                         <div className="card">
                             <div className="card-body text-center py-6">
                                 <HiX className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                                 <p className="text-gray-600 font-medium">Kamar tidak tersedia</p>
                                 <p className="text-sm text-gray-500">
                                     Kamar ini sedang {KAMAR_STATUS_LABELS[kamar.status]?.toLowerCase()}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Current Rental Info for Penghuni (if they're renting this room) */}
+                    {isPenghuni && myActiveRental && (
+                        <div className="card border-2 border-green-500">
+                            <div className="card-header bg-green-50">
+                                <h3 className="font-semibold text-green-800 flex items-center gap-2">
+                                    <HiCheck className="w-5 h-5" />
+                                    Sewa Aktif Anda
+                                </h3>
+                            </div>
+                            <div className="card-body space-y-4">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">Kode Sewa</span>
+                                        <span className="font-medium text-gray-900">{myActiveRental.kodeSewa}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">Tanggal Mulai</span>
+                                        <span className="font-medium text-gray-900">{formatDate(myActiveRental.tanggalMulai)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">Tanggal Berakhir</span>
+                                        <span className="font-medium text-gray-900">{formatDate(myActiveRental.tanggalBerakhir)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">Durasi</span>
+                                        <span className="font-medium text-gray-900">{myActiveRental.durasiBulan || '-'} bulan</span>
+                                    </div>
+                                </div>
+
+                                <hr />
+
+                                <button
+                                    onClick={() => setShowExtendModal(true)}
+                                    className="btn-primary w-full inline-flex items-center justify-center gap-2"
+                                >
+                                    <HiRefresh className="w-5 h-5" />
+                                    Perpanjang Sewa
+                                </button>
+
+                                <p className="text-xs text-gray-500 text-center">
+                                    Perpanjang masa sewa Anda dengan mudah
                                 </p>
                             </div>
                         </div>
@@ -605,6 +699,93 @@ const KamarDetail = () => {
                                         <>
                                             <HiCreditCard className="w-5 h-5" />
                                             Bayar Sekarang
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Extend Rental Confirmation Modal */}
+            {showExtendModal && myActiveRental && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl max-w-md w-full p-6">
+                        <div className="text-center">
+                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <HiRefresh className="w-6 h-6 text-green-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Perpanjang Sewa</h3>
+
+                            <div className="text-left bg-gray-50 rounded-lg p-4 mb-4">
+                                <p className="font-medium text-gray-900 mb-2">{kamar?.namaKamar}</p>
+                                <div className="space-y-1 text-sm text-gray-600">
+                                    <div className="flex justify-between">
+                                        <span>Berakhir saat ini</span>
+                                        <span className="font-medium">{formatDate(myActiveRental.tanggalBerakhir)}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="text-left mb-4">
+                                <label className="label">Durasi Perpanjangan</label>
+                                <select
+                                    value={durasiPerpanjangan}
+                                    onChange={(e) => setDurasiPerpanjangan(parseInt(e.target.value))}
+                                    className="input w-full"
+                                >
+                                    {[1, 2, 3, 4, 5, 6, 9, 12].map((bulan) => (
+                                        <option key={bulan} value={bulan}>
+                                            {bulan} Bulan
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="text-left bg-green-50 rounded-lg p-4 mb-4">
+                                <div className="space-y-1 text-sm">
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Harga per bulan</span>
+                                        <span>{formatRupiah(kamar?.hargaPerBulan)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Perpanjangan</span>
+                                        <span>{durasiPerpanjangan} bulan</span>
+                                    </div>
+                                    <hr className="my-2 border-green-200" />
+                                    <div className="flex justify-between font-bold text-green-800">
+                                        <span>Total Biaya</span>
+                                        <span>{formatRupiah(totalPerpanjangan)}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p className="text-sm text-gray-500 mb-6">
+                                Tagihan perpanjangan akan dibuat setelah konfirmasi.
+                            </p>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowExtendModal(false)}
+                                    className="btn-outline flex-1"
+                                    disabled={isExtending}
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={handleExtendRental}
+                                    className="btn-primary flex-1 inline-flex items-center justify-center gap-2"
+                                    disabled={isExtending}
+                                >
+                                    {isExtending ? (
+                                        <>
+                                            <span className="spinner"></span>
+                                            Memproses...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <HiCheck className="w-5 h-5" />
+                                            Perpanjang Sekarang
                                         </>
                                     )}
                                 </button>

@@ -58,10 +58,15 @@ const createFasilitasSchema = z.object({
   kondisi: z.string().optional()
 });
 
+const extendRentalSchema = z.object({
+  durasiPerpanjangan: z.number().int().min(1, 'Durasi minimal 1 bulan').max(12, 'Durasi maksimal 12 bulan')
+});
+
 module.exports = {
   createKategoriKamarSchema,
   updateKategoriKamarSchema,
   createKamarSchema,
   updateKamarSchema,
-  createFasilitasSchema
+  createFasilitasSchema,
+  extendRentalSchema
 };

@@ -109,6 +109,19 @@ const cancelPayment = async (req, res, next) => {
   }
 };
 
+/**
+ * Get payment summary (counts by status)
+ * GET /api/payment/summary
+ */
+const getPaymentSummary = async (req, res, next) => {
+  try {
+    const summary = await paymentService.getPaymentSummary(req.user.id, req.user.role);
+    return success(res, 'Berhasil mendapatkan summary pembayaran', summary);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllPayments,
   getPaymentById,
@@ -117,5 +130,6 @@ module.exports = {
   verifyPayment,
   checkPaymentStatus,
   syncPaymentStatus,
-  cancelPayment
+  cancelPayment,
+  getPaymentSummary
 };

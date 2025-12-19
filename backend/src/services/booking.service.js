@@ -145,7 +145,75 @@ const confirmBooking = async (riwayatSewaId) => {
   return { message: 'Booking berhasil dikonfirmasi' };
 };
 
+/**
+ * Extend an active rental
+ * Creates extension tagihan - tanggalBerakhir will be updated after payment success
+ */
+const extendRental = async (riwayatSewaId, durasiPerpanjangan, userId) => {
+  // Validate duration
+  if (!durasiPerpanjangan || durasiPerpanjangan < 1 || durasiPerpanjangan > 12) {
+    throw { statusCode: 400, message: 'Durasi perpanjangan harus antara 1-12 bulan' };
+  }
+
+  // Get riwayatSewa with kamar info
+  const riwayatSewa = await prisma.riwayatSewa.findUnique({
+    where: { id: parseInt(riwayatSewaId) },
+    include: { 
+      kamar: true,
+      user: { select: { id: true, name: true } }
+    }
+  });
+
+  if (!riwayatSewa) {
+    throw { statusCode: 404, message: 'Data sewa tidak ditemukan' };
+  }
+
+  // Validate ownership - user must own this rental
+  if (riwayatSewa.userId !== parseInt(userId)) {
+    throw { statusCode: 403, message: 'Anda tidak memiliki akses untuk memperpanjang sewa ini' };
+  }
+
+  // Validate status - must be AKTIF
+  if (riwayatSewa.status !== 'AKTIF') {
+    throw { statusCode: 400, message: 'Hanya sewa aktif yang dapat diperpanjang' };
+  }
+
+  // Calculate new end date (for display/estimation only)
+  const currentEndDate = new Date(riwayatSewa.tanggalBerakhir);
+  const estimatedNewEndDate = new Date(currentEndDate);
+  estimatedNewEndDate.setMonth(estimatedNewEndDate.getMonth() + parseInt(durasiPerpanjangan));
+
+  // Calculate extension cost
+  const hargaPerBulan = parseFloat(riwayatSewa.hargaSewa || riwayatSewa.kamar.hargaPerBulan);
+  const totalBiaya = hargaPerBulan * parseInt(durasiPerpanjangan);
+
+  // Create tagihan only - tanggalBerakhir will be updated after payment success
+  const nomorTagihan = generateCode('TGH');
+  const tagihan = await prisma.tagihan.create({
+    data: {
+      nomorTagihan,
+      userId: parseInt(userId),
+      riwayatSewaId: parseInt(riwayatSewaId),
+      jenisTagihan: 'SEWA',
+      nominal: totalBiaya,
+      tanggalJatuhTempo: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days to pay
+      status: 'BELUM_LUNAS',
+      keterangan: `Perpanjangan sewa kamar ${riwayatSewa.kamar.namaKamar} untuk ${durasiPerpanjangan} bulan`
+    }
+  });
+
+  return {
+    riwayatSewa,
+    tagihan,
+    durasiPerpanjangan: parseInt(durasiPerpanjangan),
+    totalBiaya,
+    tanggalBerakhirSaatIni: currentEndDate,
+    estimasiTanggalBerakhirBaru: estimatedNewEndDate
+  };
+};
+
 module.exports = {
   createBooking,
-  confirmBooking
+  confirmBooking,
+  extendRental
 };

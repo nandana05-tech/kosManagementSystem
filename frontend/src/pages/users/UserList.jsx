@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useUserStore } from '../../features/users/userStore';
 import { formatDate, formatPhone, getInitials } from '../../utils/helpers';
@@ -41,6 +41,34 @@ const UserList = () => {
     const [deleteModal, setDeleteModal] = useState({ show: false, user: null });
     const [isDeleting, setIsDeleting] = useState(false);
     const [activeDropdown, setActiveDropdown] = useState(null);
+    const [dropdownPosition, setDropdownPosition] = useState('below'); // 'below' or 'above'
+    const buttonRefs = useRef({});
+
+    // Calculate dropdown position based on viewport
+    const calculateDropdownPosition = useCallback((buttonElement) => {
+        if (!buttonElement) return 'below';
+
+        const rect = buttonElement.getBoundingClientRect();
+        const dropdownHeight = 160; // Approximate dropdown height
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        // If not enough space below and more space above, show above
+        if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+            return 'above';
+        }
+        return 'below';
+    }, []);
+
+    const handleDropdownToggle = (userId) => {
+        if (activeDropdown === userId) {
+            setActiveDropdown(null);
+        } else {
+            const position = calculateDropdownPosition(buttonRefs.current[userId]);
+            setDropdownPosition(position);
+            setActiveDropdown(userId);
+        }
+    };
 
     useEffect(() => {
         const params = {
@@ -266,54 +294,57 @@ const UserList = () => {
                                         <td className="px-4 py-3 text-sm text-gray-600">
                                             {formatDate(user.createdAt)}
                                         </td>
-                                        <td className="px-4 py-3 text-right relative">
-                                            <button
-                                                onClick={() => setActiveDropdown(activeDropdown === user.id ? null : user.id)}
-                                                className="p-2 hover:bg-gray-100 rounded-lg"
-                                            >
-                                                <HiDotsVertical className="w-5 h-5 text-gray-500" />
-                                            </button>
+                                        <td className="px-4 py-3 text-right">
+                                            <div className="relative inline-block">
+                                                <button
+                                                    ref={(el) => buttonRefs.current[user.id] = el}
+                                                    onClick={() => handleDropdownToggle(user.id)}
+                                                    className="p-2 hover:bg-gray-100 rounded-lg"
+                                                >
+                                                    <HiDotsVertical className="w-5 h-5 text-gray-500" />
+                                                </button>
 
-                                            {/* Dropdown Menu */}
-                                            {activeDropdown === user.id && (
-                                                <div className="absolute right-4 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[160px]">
-                                                    <Link
-                                                        to={`/users/${user.id}/edit`}
-                                                        className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                                        onClick={() => setActiveDropdown(null)}
-                                                    >
-                                                        <HiPencil className="w-4 h-4" />
-                                                        Edit
-                                                    </Link>
-                                                    <button
-                                                        onClick={() => handleToggleStatus(user.id)}
-                                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                                    >
-                                                        {user.isActive ? (
-                                                            <>
-                                                                <HiX className="w-4 h-4" />
-                                                                Nonaktifkan
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <HiCheck className="w-4 h-4" />
-                                                                Aktifkan
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                    <hr className="my-1" />
-                                                    <button
-                                                        onClick={() => {
-                                                            setDeleteModal({ show: true, user });
-                                                            setActiveDropdown(null);
-                                                        }}
-                                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                                                    >
-                                                        <HiTrash className="w-4 h-4" />
-                                                        Hapus
-                                                    </button>
-                                                </div>
-                                            )}
+                                                {/* Dropdown Menu */}
+                                                {activeDropdown === user.id && (
+                                                    <div className={`absolute right-0 ${dropdownPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'} bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[160px]`}>
+                                                        <Link
+                                                            to={`/users/${user.id}/edit`}
+                                                            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                            onClick={() => setActiveDropdown(null)}
+                                                        >
+                                                            <HiPencil className="w-4 h-4" />
+                                                            Edit
+                                                        </Link>
+                                                        <button
+                                                            onClick={() => handleToggleStatus(user.id)}
+                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                        >
+                                                            {user.isActive ? (
+                                                                <>
+                                                                    <HiX className="w-4 h-4" />
+                                                                    Nonaktifkan
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <HiCheck className="w-4 h-4" />
+                                                                    Aktifkan
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                        <hr className="my-1" />
+                                                        <button
+                                                            onClick={() => {
+                                                                setDeleteModal({ show: true, user });
+                                                                setActiveDropdown(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                                        >
+                                                            <HiTrash className="w-4 h-4" />
+                                                            Hapus
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -350,8 +381,8 @@ const UserList = () => {
                                         key={page}
                                         onClick={() => handlePageChange(page)}
                                         className={`w-10 h-10 rounded-lg font-medium ${page === meta.page
-                                                ? 'bg-primary-600 text-white'
-                                                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                            ? 'bg-primary-600 text-white'
+                                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                                             }`}
                                     >
                                         {page}
@@ -412,7 +443,7 @@ const UserList = () => {
             {/* Click outside to close dropdown */}
             {activeDropdown && (
                 <div
-                    className="fixed inset-0 z-0"
+                    className="fixed inset-0 z-40"
                     onClick={() => setActiveDropdown(null)}
                 />
             )}
