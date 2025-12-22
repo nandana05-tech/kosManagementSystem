@@ -46,9 +46,13 @@ const BarangForm = () => {
     } = useForm({
         defaultValues: {
             kondisi: 'BAIK',
-            jumlah: 1
+            jumlah: 1,
+            namaBarangId: ''
         }
     });
+
+    // Watch the namaBarangId value
+    const watchedNamaBarangId = watch('namaBarangId');
 
     useEffect(() => {
         fetchKategori();
@@ -101,11 +105,23 @@ const BarangForm = () => {
     }, [selectedKategori]);
 
     const onSubmit = async (data) => {
+        // Validate namaBarangId is set
+        if (!data.namaBarangId || data.namaBarangId === '' || data.namaBarangId === '0') {
+            toast.error('Silakan pilih atau tambahkan nama barang terlebih dahulu');
+            return;
+        }
+
+        const parsedNamaBarangId = parseInt(data.namaBarangId);
+        if (isNaN(parsedNamaBarangId) || parsedNamaBarangId <= 0) {
+            toast.error('Nama barang tidak valid');
+            return;
+        }
+
         setIsSubmitting(true);
 
         try {
             const submitData = {
-                namaBarangId: parseInt(data.namaBarangId),
+                namaBarangId: parsedNamaBarangId,
                 kategoriId: parseInt(selectedKategori),
                 kamarId: parseInt(data.kamarId),
                 jumlah: parseInt(data.jumlah),
@@ -246,6 +262,11 @@ const BarangForm = () => {
                                 )}
                                 {errors.namaBarangId && (
                                     <p className="error-message">{errors.namaBarangId.message}</p>
+                                )}
+                                {showNewNamaBarang && !watchedNamaBarangId && (
+                                    <p className="text-sm text-amber-600 mt-1">
+                                        Klik tombol + untuk menyimpan nama barang baru sebelum submit
+                                    </p>
                                 )}
                             </div>
                         </div>

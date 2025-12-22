@@ -17,7 +17,8 @@ app.use(helmet());
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:3000',
   'http://localhost',
-  'http://localhost:80'
+  'http://localhost:80',
+  process.env.FRONTEND_URL?.replace('https://', 'http://')
 ].filter(Boolean);
 
 app.use(cors({

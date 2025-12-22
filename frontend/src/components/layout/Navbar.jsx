@@ -15,6 +15,25 @@ const Navbar = ({ onMenuClick }) => {
     const [notifOpen, setNotifOpen] = useState(false);
     const [latestLaporan, setLatestLaporan] = useState([]);
     const [loadingLaporan, setLoadingLaporan] = useState(false);
+    const [hasUnread, setHasUnread] = useState(false);
+
+    // Initial fetch to check for notifications on mount
+    useEffect(() => {
+        const checkNotifications = async () => {
+            try {
+                const response = await laporanService.getAll({ limit: 1, page: 1 });
+                const data = response.data || [];
+                // Check if there are any pending/unprocessed laporan
+                setHasUnread(data.length > 0 && data.some(l => l.status === 'DIAJUKAN' || l.status === 'DIPROSES'));
+            } catch (error) {
+                console.error('Error checking notifications:', error);
+            }
+        };
+        checkNotifications();
+        // Refresh every 30 seconds
+        const interval = setInterval(checkNotifications, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
     // Fetch latest laporan when notification dropdown opens
     useEffect(() => {
@@ -24,6 +43,9 @@ const Navbar = ({ onMenuClick }) => {
                 try {
                     const response = await laporanService.getAll({ limit: 5, page: 1 });
                     setLatestLaporan(response.data || []);
+                    // Update hasUnread based on latest data
+                    const data = response.data || [];
+                    setHasUnread(data.length > 0 && data.some(l => l.status === 'DIAJUKAN' || l.status === 'DIPROSES'));
                 } catch (error) {
                     console.error('Error fetching laporan:', error);
                 }
@@ -93,7 +115,7 @@ const Navbar = ({ onMenuClick }) => {
                             className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
                         >
                             <HiBell className="w-6 h-6" />
-                            {latestLaporan.length > 0 && (
+                            {hasUnread && (
                                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                             )}
                         </button>

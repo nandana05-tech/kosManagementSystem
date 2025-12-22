@@ -4,6 +4,7 @@ import { useKamarStore } from '../../features/kamar/kamarStore';
 import { useAuthStore } from '../../features/auth/authStore';
 import { formatRupiah } from '../../utils/helpers';
 import { KAMAR_STATUS_LABELS, KAMAR_STATUS_COLORS } from '../../utils/constants';
+import { getFileUrl } from '../../utils/url';
 import {
     HiPlus,
     HiSearch,
@@ -220,7 +221,7 @@ const KamarList = () => {
                             <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden rounded-t-xl">
                                 {room.fotoKamar?.[0]?.foto ? (
                                     <img
-                                        src={room.fotoKamar[0].foto}
+                                        src={getFileUrl(room.fotoKamar[0].foto)}
                                         alt={room.namaKamar}
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                     />
@@ -297,7 +298,7 @@ const KamarList = () => {
                                                 <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                                                     {room.fotoKamar?.[0]?.foto ? (
                                                         <img
-                                                            src={room.fotoKamar[0].foto}
+                                                            src={getFileUrl(room.fotoKamar[0].foto)}
                                                             alt={room.namaKamar}
                                                             className="w-full h-full object-cover"
                                                         />
@@ -372,8 +373,8 @@ const KamarList = () => {
                                         key={page}
                                         onClick={() => handlePageChange(page)}
                                         className={`w-10 h-10 rounded-lg font-medium ${page === meta.page
-                                                ? 'bg-primary-600 text-white'
-                                                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                            ? 'bg-primary-600 text-white'
+                                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                                             }`}
                                     >
                                         {page}

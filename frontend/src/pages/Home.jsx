@@ -4,6 +4,7 @@ import { useAuthStore } from '../features/auth/authStore';
 import { kamarService } from '../services/kamar.service';
 import { formatRupiah } from '../utils/helpers';
 import { KAMAR_STATUS_LABELS, KAMAR_STATUS_COLORS } from '../utils/constants';
+import { getFileUrl } from '../utils/url';
 import {
     HiOfficeBuilding,
     HiLocationMarker,
@@ -267,7 +268,7 @@ const Home = () => {
                                     <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
                                         {room.fotoKamar?.[0]?.foto ? (
                                             <img
-                                                src={room.fotoKamar[0].foto}
+                                                src={getFileUrl(room.fotoKamar[0].foto)}
                                                 alt={room.namaKamar}
                                                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                                             />

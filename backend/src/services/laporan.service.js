@@ -1,5 +1,7 @@
 const prisma = require('../config/database');
 const { paginate, paginationMeta } = require('../utils/response');
+const { sendNewLaporanNotification, sendLaporanStatusUpdateNotification } = require('../utils/email');
+const logger = require('../utils/logger');
 
 /**
  * Get all laporan
@@ -79,10 +81,33 @@ const createLaporan = async (data, userId) => {
       userId
     },
     include: {
-      user: { select: { id: true, name: true } },
+      user: { select: { id: true, name: true, email: true } },
       kamar: { select: { id: true, namaKamar: true } }
     }
   });
+
+  // Send email notification to all PEMILIK users
+  try {
+    const pemilikUsers = await prisma.user.findMany({
+      where: { role: 'PEMILIK', isActive: true },
+      select: { email: true }
+    });
+
+    for (const pemilik of pemilikUsers) {
+      await sendNewLaporanNotification(pemilik.email, {
+        laporanId: laporan.id,
+        judul: laporan.judul,
+        isiLaporan: laporan.isiLaporan,
+        prioritas: laporan.prioritas,
+        penghuniName: laporan.user.name,
+        kamarName: laporan.kamar.namaKamar
+      });
+    }
+    logger.info(`Sent new laporan notification for laporan ID: ${laporan.id}`);
+  } catch (emailError) {
+    // Don't fail the laporan creation if email fails
+    logger.error('Failed to send new laporan notification:', emailError);
+  }
 
   return laporan;
 };
@@ -139,10 +164,25 @@ const updateLaporanStatus = async (id, status, tanggalSelesai = null) => {
     where: { id: parseInt(id) },
     data,
     include: {
-      user: { select: { id: true, name: true } },
+      user: { select: { id: true, name: true, email: true } },
       kamar: { select: { id: true, namaKamar: true } }
     }
   });
+
+  // Send email notification to penghuni about status update
+  try {
+    await sendLaporanStatusUpdateNotification(laporan.user.email, {
+      laporanId: laporan.id,
+      judul: laporan.judul,
+      status: laporan.status,
+      penghuniName: laporan.user.name,
+      kamarName: laporan.kamar.namaKamar
+    });
+    logger.info(`Sent laporan status update notification for laporan ID: ${laporan.id}, status: ${status}`);
+  } catch (emailError) {
+    // Don't fail the status update if email fails
+    logger.error('Failed to send laporan status update notification:', emailError);
+  }
 
   return laporan;
 };

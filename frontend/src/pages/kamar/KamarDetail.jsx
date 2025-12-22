@@ -6,6 +6,7 @@ import { kamarService } from '../../services/kamar.service';
 import { paymentService } from '../../services/payment.service';
 import { formatRupiah, formatDate } from '../../utils/helpers';
 import { KAMAR_STATUS_LABELS, KAMAR_STATUS_COLORS } from '../../utils/constants';
+import { getFileUrl } from '../../utils/url';
 import toast from 'react-hot-toast';
 import {
     HiArrowLeft,
@@ -229,7 +230,7 @@ const KamarDetail = () => {
                             {kamar.fotoKamar?.length > 0 ? (
                                 <>
                                     <img
-                                        src={kamar.fotoKamar[currentPhotoIndex]?.foto}
+                                        src={getFileUrl(kamar.fotoKamar[currentPhotoIndex]?.foto)}
                                         alt={kamar.namaKamar}
                                         className="w-full h-full object-cover"
                                     />
@@ -278,7 +279,7 @@ const KamarDetail = () => {
                                             }`}
                                     >
                                         <img
-                                            src={foto.foto}
+                                            src={getFileUrl(foto.foto)}
                                             alt={`${kamar.namaKamar} ${index + 1}`}
                                             className="w-full h-full object-cover"
                                         />

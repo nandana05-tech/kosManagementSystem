@@ -85,7 +85,7 @@ const getAllKamar = async (query = {}) => {
       orderBy: { createdAt: 'desc' },
       include: {
         kategori: { select: { namaKategori: true } },
-        fotoKamar: { where: { isPrimary: true }, take: 1 },
+        fotoKamar: { orderBy: { urutan: 'asc' }, take: 1 },
         _count: { select: { riwayatSewa: true } }
       }
     }),

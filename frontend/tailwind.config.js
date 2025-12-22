@@ -5,6 +5,15 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
+    // Custom responsive breakpoints
+    screens: {
+      'xs': '375px',    // HP kecil (iPhone SE, etc.)
+      'sm': '640px',    // HP besar
+      'md': '768px',    // Tablet
+      'lg': '1024px',   // Laptop
+      'xl': '1280px',   // Desktop
+      '2xl': '1536px',  // Monitor besar
+    },
     extend: {
       colors: {
         primary: {
