@@ -30,12 +30,13 @@ FROM node:18-bullseye-slim AS production
 
 WORKDIR /app
 
-# Install OpenSSL for Prisma
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL for Prisma and libvips for Sharp image processing
+RUN apt-get update -y && apt-get install -y openssl libvips-dev && rm -rf /var/lib/apt/lists/*
 
 # Install production dependencies only
+# Using npm install instead of npm ci for cross-platform sharp compatibility
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev && npm install sharp
 
 # Copy Prisma schema first
 COPY prisma ./prisma/
