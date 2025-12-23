@@ -19,6 +19,7 @@ const updateUserSchema = z.object({
 
 const updateProfileSchema = z.object({
   name: z.string().min(2, 'Nama minimal 2 karakter').max(255).optional(),
+  email: z.string().email('Format email tidak valid').optional(),
   noTelepon: z.string().optional()
 });
 

@@ -155,6 +155,22 @@ const updateUser = async (id, data) => {
 const updateProfile = async (userId, data, file) => {
   const updateData = { ...data };
 
+  // Check email uniqueness if email is being updated
+  if (data.email) {
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    
+    if (data.email !== currentUser.email) {
+      const existingEmail = await prisma.user.findUnique({
+        where: { email: data.email }
+      });
+      if (existingEmail) {
+        throw { statusCode: 409, message: 'Email sudah digunakan' };
+      }
+    }
+  }
+
   if (file) {
     updateData.fotoProfil = `/uploads/profiles/${file.filename}`;
   }

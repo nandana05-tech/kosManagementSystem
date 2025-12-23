@@ -66,9 +66,12 @@ const errorHandler = (err, req, res, next) => {
 
   // Default error response
   const statusCode = err.statusCode || 500;
-  const message = process.env.NODE_ENV === 'production' 
-    ? 'Terjadi kesalahan pada server'
-    : err.message;
+  
+  // Show specific message for client errors (4xx), hide only server errors (5xx) in production
+  const isClientError = statusCode >= 400 && statusCode < 500;
+  const message = (isClientError || process.env.NODE_ENV !== 'production')
+    ? err.message
+    : 'Terjadi kesalahan pada server';
 
   res.status(statusCode).json({
     success: false,
