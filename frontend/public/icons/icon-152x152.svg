@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="152" height="152" viewBox="0 0 152 152">
+  <!-- Background -->
+  <rect width="152" height="152" rx="22.8" fill="#3b82f6"/>
+  
+  <!-- House/Building Icon -->
+  <g transform="translate(15.200000000000001, 15.200000000000001)">
+    <!-- Roof -->
+    <path d="M60.8 12.16 L12.16 48.64 L109.44 48.64 Z" 
+          fill="white"/>
+    
+    <!-- Building Body -->
+    <rect x="18.24" y="42.559999999999995" 
+          width="85.11999999999999" height="66.88" 
+          fill="white"/>
+    
+    <!-- Door -->
+    <rect x="48.64" y="72.96" 
+          width="24.32" height="36.48" 
+          fill="#3b82f6"/>
+    
+    <!-- Windows Row 1 -->
+    <rect x="26.752" y="51.071999999999996" 
+          width="14.591999999999999" height="12.16" 
+          fill="#3b82f6"/>
+    <rect x="80.256" y="51.071999999999996" 
+          width="14.591999999999999" height="12.16" 
+          fill="#3b82f6"/>
+          
+    <!-- Windows Row 2 -->
+    <rect x="26.752" y="70.52799999999999" 
+          width="14.591999999999999" height="12.16" 
+          fill="#3b82f6"/>
+    <rect x="80.256" y="70.52799999999999" 
+          width="14.591999999999999" height="12.16" 
+          fill="#3b82f6"/>
+  </g>
+</svg>
