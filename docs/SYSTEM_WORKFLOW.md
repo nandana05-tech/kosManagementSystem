@@ -48,6 +48,57 @@ graph TB
     Express --> SMTP
 ```
 
+## Use Case Diagram
+
+Gambaran umum interaksi aktor dengan fitur-fitur utama sistem:
+
+```mermaid
+flowchart LR
+    %% ===== AKTOR =====
+    Pemilik((Pemilik))
+    Penghuni((Penghuni))
+
+    %% ===== SISTEM =====
+    subgraph Sistem["Sistem Manajemen Kos"]
+        UC1([Autentikasi])
+        UC2([Kelola Kamar])
+        UC3([Kelola Penghuni])
+        UC4([Kelola Tagihan])
+        UC5([Pembayaran Online])
+        UC6([Lapor Kerusakan])
+        UC7([Kelola Inventori])
+        UC8([Dashboard])
+    end
+
+    %% ===== RELASI PEMILIK =====
+    Pemilik --- UC1
+    Pemilik --- UC2
+    Pemilik --- UC3
+    Pemilik --- UC4
+    Pemilik --- UC7
+    Pemilik --- UC8
+
+    %% ===== RELASI PENGHUNI =====
+    Penghuni --- UC1
+    Penghuni --- UC5
+    Penghuni --- UC6
+    Penghuni --- UC7
+    Penghuni --- UC8
+```
+
+### Deskripsi Use Case Utama
+
+| Use Case | Deskripsi | Pemilik | Penghuni |
+|----------|-----------|:-------:|:--------:|
+| **Autentikasi** | Login, register, reset password, verifikasi email | ✓ | ✓ |
+| **Kelola Kamar** | CRUD data kamar, foto, dan fasilitas | ✓ | - |
+| **Kelola Penghuni** | CRUD data penghuni dan assign ke kamar | ✓ | - |
+| **Kelola Tagihan** | Generate dan kelola tagihan bulanan | ✓ | - |
+| **Pembayaran Online** | Bayar tagihan via Midtrans | - | ✓ |
+| **Lapor Kerusakan** | Buat dan kelola laporan kerusakan | Proses | Buat |
+| **Kelola Inventori** | Kelola barang/inventori kamar | Master | Kamar |
+| **Dashboard** | Lihat statistik dan ringkasan | Full | Limited |
+
 ## Flow Utama Aplikasi
 
 ### 1. Authentication Flow
