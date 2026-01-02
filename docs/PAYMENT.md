@@ -454,7 +454,7 @@ sequenceDiagram
     BE-->>FE: 7. Return redirect_url
     FE->>MT: 8. Redirect ke Midtrans
     
-    Note over U,MT: User pilih metode & bayar
+    Note over U,MT: User pilih bayar
     
     U->>MT: 9. Selesaikan pembayaran
     MT->>BE: 10. POST /notification (webhook)
