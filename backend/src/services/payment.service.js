@@ -98,6 +98,29 @@ const createPayment = async (tagihanId, userId) => {
     throw { statusCode: 400, message: 'Tagihan ini sudah memiliki pembayaran yang berhasil' };
   }
 
+  // Check if there's an existing PENDING payment with valid token (created within 24 hours)
+  const existingPendingPayment = await prisma.payment.findFirst({
+    where: {
+      tagihanId: parsedTagihanId,
+      status: 'PENDING',
+      snapToken: { not: null },
+      createdAt: {
+        gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Created within last 24 hours
+      }
+    },
+    include: { tagihan: true }
+  });
+
+  // If valid pending payment exists, return it instead of creating new one
+  if (existingPendingPayment && existingPendingPayment.snapToken) {
+    return {
+      payment: existingPendingPayment,
+      snapToken: existingPendingPayment.snapToken,
+      redirectUrl: existingPendingPayment.snapRedirectUrl,
+      isReused: true // Flag to indicate this is an existing payment
+    };
+  }
+
   // Check if user owns this tagihan
   if (tagihan.userId !== userId) {
     throw { statusCode: 403, message: 'Anda tidak memiliki akses ke tagihan ini' };
