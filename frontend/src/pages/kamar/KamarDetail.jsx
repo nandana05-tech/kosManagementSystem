@@ -444,11 +444,6 @@ const KamarDetail = () => {
                                 <p className="text-2xl font-bold text-primary-600">
                                     {formatRupiah(kamar.hargaPerBulan)}
                                 </p>
-                                {kamar.hargaPerHarian && (
-                                    <p className="text-sm text-gray-500 mt-1">
-                                        atau {formatRupiah(kamar.hargaPerHarian)}/hari
-                                    </p>
-                                )}
                             </div>
                         </div>
                     </div>
