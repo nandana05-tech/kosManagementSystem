@@ -212,8 +212,238 @@ const extendRental = async (riwayatSewaId, durasiPerpanjangan, userId) => {
   };
 };
 
+/**
+ * Move tenant to a different room (Pindah Kamar)
+ * - Closes old rental
+ * - Creates new rental for new room
+ * - If new room is MORE expensive, creates prorated adjustment invoice
+ * - If new room is CHEAPER or same, no credit given
+ */
+const pindahKamar = async (riwayatSewaId, newKamarId, tanggalPindah = null) => {
+  const moveDate = tanggalPindah ? new Date(tanggalPindah) : new Date();
+  
+  // Get current rental with kamar info
+  const currentRental = await prisma.riwayatSewa.findUnique({
+    where: { id: parseInt(riwayatSewaId) },
+    include: { 
+      kamar: true,
+      user: { select: { id: true, name: true, email: true } }
+    }
+  });
+
+  if (!currentRental) {
+    throw { statusCode: 404, message: 'Data sewa tidak ditemukan' };
+  }
+
+  if (currentRental.status !== 'AKTIF') {
+    throw { statusCode: 400, message: 'Hanya sewa aktif yang dapat dipindahkan' };
+  }
+
+  // Get new kamar
+  const newKamar = await prisma.kamar.findUnique({
+    where: { id: parseInt(newKamarId) }
+  });
+
+  if (!newKamar) {
+    throw { statusCode: 404, message: 'Kamar tujuan tidak ditemukan' };
+  }
+
+  if (newKamar.id === currentRental.kamarId) {
+    throw { statusCode: 400, message: 'Kamar tujuan sama dengan kamar saat ini' };
+  }
+
+  if (newKamar.status !== 'TERSEDIA') {
+    throw { statusCode: 400, message: 'Kamar tujuan tidak tersedia' };
+  }
+
+  if (!newKamar.hargaPerBulan) {
+    throw { statusCode: 400, message: 'Harga kamar tujuan belum ditentukan' };
+  }
+
+  // Calculate remaining days until rental end date (periode akhir sewa)
+  const today = new Date(moveDate);
+  const oldEndDate = new Date(currentRental.tanggalBerakhir);
+  
+  // Calculate days from move date to original rental end date
+  const remainingDays = Math.max(0, Math.ceil((oldEndDate - today) / (1000 * 60 * 60 * 24)));
+  
+  // Use 30 days as standard month for daily rate calculation
+  const daysPerMonth = 30;
+
+  // Calculate daily rates (based on 30 days/month)
+  const oldHarga = parseFloat(currentRental.hargaSewa || currentRental.kamar.hargaPerBulan);
+  const newHarga = parseFloat(newKamar.hargaPerBulan);
+  const oldDailyRate = oldHarga / daysPerMonth;
+  const newDailyRate = newHarga / daysPerMonth;
+
+  // Calculate prorated difference for remaining rental period
+  const dailyDifference = newDailyRate - oldDailyRate;
+  const proratedDifference = Math.round(dailyDifference * remainingDays);
+
+  // Calculate remaining months from old rental
+  const monthsRemaining = Math.max(0, 
+    (oldEndDate.getFullYear() - moveDate.getFullYear()) * 12 + 
+    (oldEndDate.getMonth() - moveDate.getMonth())
+  );
+
+  // New rental end date (same as old rental end date by default)
+  const newEndDate = new Date(oldEndDate);
+
+  // Execute transaction
+  const result = await prisma.$transaction(async (tx) => {
+    // 1. Close current rental
+    await tx.riwayatSewa.update({
+      where: { id: parseInt(riwayatSewaId) },
+      data: {
+        status: 'SELESAI',
+        tanggalBerakhir: moveDate,
+        catatan: `Pindah ke kamar ${newKamar.namaKamar} pada ${moveDate.toLocaleDateString('id-ID')}`
+      }
+    });
+
+    // 2. Update old kamar status to TERSEDIA
+    await tx.kamar.update({
+      where: { id: currentRental.kamarId },
+      data: { status: 'TERSEDIA' }
+    });
+
+    // 3. Create new rental for new kamar
+    const kodeSewa = generateCode('SWA');
+    const newRental = await tx.riwayatSewa.create({
+      data: {
+        kodeSewa,
+        userId: currentRental.userId,
+        kamarId: parseInt(newKamarId),
+        tanggalMulai: moveDate,
+        tanggalBerakhir: newEndDate,
+        hargaSewa: newKamar.hargaPerBulan,
+        durasiBulan: monthsRemaining || 1,
+        status: 'AKTIF',
+        catatan: `Pindahan dari kamar ${currentRental.kamar.namaKamar}`
+      }
+    });
+
+    // 4. Update new kamar status to TERISI
+    await tx.kamar.update({
+      where: { id: parseInt(newKamarId) },
+      data: { status: 'TERISI' }
+    });
+
+    // 5. If new room is MORE expensive, create adjustment invoice
+    let adjustmentTagihan = null;
+    if (proratedDifference > 0) {
+      const nomorTagihan = generateCode('TGH');
+      adjustmentTagihan = await tx.tagihan.create({
+        data: {
+          nomorTagihan,
+          userId: currentRental.userId,
+          riwayatSewaId: newRental.id,
+          jenisTagihan: 'SELISIH_PINDAH_KAMAR',
+          nominal: proratedDifference,
+          tanggalJatuhTempo: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          status: 'BELUM_LUNAS',
+          keterangan: `Selisih harga pindah kamar dari ${currentRental.kamar.namaKamar} ke ${newKamar.namaKamar} (${remainingDays} hari sisa periode sewa s/d ${oldEndDate.toLocaleDateString('id-ID')})`
+        }
+      });
+    }
+
+    return {
+      oldRental: currentRental,
+      newRental,
+      adjustmentTagihan,
+      calculation: {
+        moveDate: moveDate.toISOString(),
+        rentalEndDate: oldEndDate.toISOString(),
+        remainingDays,
+        daysPerMonth,
+        oldKamar: {
+          name: currentRental.kamar.namaKamar,
+          hargaPerBulan: oldHarga,
+          dailyRate: Math.round(oldDailyRate)
+        },
+        newKamar: {
+          name: newKamar.namaKamar,
+          hargaPerBulan: newHarga,
+          dailyRate: Math.round(newDailyRate)
+        },
+        dailyDifference: Math.round(dailyDifference),
+        proratedDifference,
+        hasAdjustment: proratedDifference > 0
+      }
+    };
+  });
+
+  return result;
+};
+
+/**
+ * Preview room transfer calculation (without actually moving)
+ */
+const previewPindahKamar = async (riwayatSewaId, newKamarId, tanggalPindah = null) => {
+  const moveDate = tanggalPindah ? new Date(tanggalPindah) : new Date();
+  
+  // Get current rental
+  const currentRental = await prisma.riwayatSewa.findUnique({
+    where: { id: parseInt(riwayatSewaId) },
+    include: { kamar: true }
+  });
+
+  if (!currentRental) {
+    throw { statusCode: 404, message: 'Data sewa tidak ditemukan' };
+  }
+
+  // Get new kamar
+  const newKamar = await prisma.kamar.findUnique({
+    where: { id: parseInt(newKamarId) }
+  });
+
+  if (!newKamar) {
+    throw { statusCode: 404, message: 'Kamar tujuan tidak ditemukan' };
+  }
+
+  // Calculate remaining days until rental end date (periode akhir sewa)
+  const today = new Date(moveDate);
+  const oldEndDate = new Date(currentRental.tanggalBerakhir);
+  const remainingDays = Math.max(0, Math.ceil((oldEndDate - today) / (1000 * 60 * 60 * 24)));
+  const daysPerMonth = 30;
+
+  const oldHarga = parseFloat(currentRental.hargaSewa || currentRental.kamar.hargaPerBulan);
+  const newHarga = parseFloat(newKamar.hargaPerBulan);
+  const oldDailyRate = oldHarga / daysPerMonth;
+  const newDailyRate = newHarga / daysPerMonth;
+  const dailyDifference = newDailyRate - oldDailyRate;
+  const proratedDifference = Math.round(dailyDifference * remainingDays);
+
+  return {
+    moveDate: moveDate.toISOString(),
+    rentalEndDate: oldEndDate.toISOString(),
+    remainingDays,
+    daysPerMonth,
+    oldKamar: {
+      id: currentRental.kamar.id,
+      name: currentRental.kamar.namaKamar,
+      hargaPerBulan: oldHarga,
+      dailyRate: Math.round(oldDailyRate)
+    },
+    newKamar: {
+      id: newKamar.id,
+      name: newKamar.namaKamar,
+      hargaPerBulan: newHarga,
+      dailyRate: Math.round(newDailyRate)
+    },
+    dailyDifference: Math.round(dailyDifference),
+    proratedDifference: proratedDifference > 0 ? proratedDifference : 0,
+    hasAdjustment: proratedDifference > 0,
+    adjustmentMessage: proratedDifference > 0 
+      ? `Tagihan selisih Rp ${proratedDifference.toLocaleString('id-ID')} akan dibuat (${remainingDays} hari sisa periode sewa)`
+      : 'Tidak ada tagihan selisih (kamar baru lebih murah atau sama)'
+  };
+};
+
 module.exports = {
   createBooking,
   confirmBooking,
-  extendRental
+  extendRental,
+  pindahKamar,
+  previewPindahKamar
 };

@@ -15,6 +15,7 @@ const {
 router.post('/register', validateZod(registerSchema), authController.register);
 router.post('/login', validateZod(loginSchema), authController.login);
 router.get('/verify-email/:token', authController.verifyEmail);
+router.post('/resend-verification', authController.resendVerification);
 router.post('/forgot-password', validateZod(forgotPasswordSchema), authController.forgotPassword);
 router.post('/reset-password', validateZod(resetPasswordSchema), authController.resetPassword);
 

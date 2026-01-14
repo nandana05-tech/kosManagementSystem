@@ -42,6 +42,19 @@ const verifyEmail = async (req, res, next) => {
 };
 
 /**
+ * Resend verification email
+ * POST /api/auth/resend-verification
+ */
+const resendVerification = async (req, res, next) => {
+  try {
+    const result = await authService.resendVerificationEmail(req.body.email);
+    return success(res, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Forgot password
  * POST /api/auth/forgot-password
  */
@@ -111,6 +124,7 @@ module.exports = {
   register,
   login,
   verifyEmail,
+  resendVerification,
   forgotPassword,
   resetPassword,
   changePassword,

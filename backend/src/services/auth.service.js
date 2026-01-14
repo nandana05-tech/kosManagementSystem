@@ -54,6 +54,37 @@ const register = async (data) => {
 };
 
 /**
+ * Resend verification email
+ */
+const resendVerificationEmail = async (email) => {
+  const user = await prisma.user.findUnique({
+    where: { email, deletedAt: null }
+  });
+
+  if (!user) {
+    throw { statusCode: 404, message: 'Email tidak ditemukan' };
+  }
+
+  if (user.isActive) {
+    throw { statusCode: 400, message: 'Email sudah diverifikasi. Silakan login.' };
+  }
+
+  // Generate new verification token
+  const verificationToken = generateToken();
+
+  // Update user with new token
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { verificationToken }
+  });
+
+  // Send verification email
+  await sendVerificationEmail(user.email, user.name, verificationToken);
+
+  return { message: 'Email verifikasi telah dikirim ulang' };
+};
+
+/**
  * Login user
  */
 const login = async (email, password) => {
@@ -237,6 +268,7 @@ const logout = async (userId) => {
 
 module.exports = {
   register,
+  resendVerificationEmail,
   login,
   verifyEmail,
   forgotPassword,

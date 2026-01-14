@@ -51,6 +51,13 @@ export const paymentService = {
   },
 
   /**
+   * Get payments grouped by user (Pemilik only)
+   */
+  getGroupedByUser: async (params = {}) => {
+    return api.get('/payment/grouped', { params });
+  },
+
+  /**
    * Get payment summary
    */
   getSummary: async () => {

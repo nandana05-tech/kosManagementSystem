@@ -28,8 +28,8 @@ const Register = () => {
                 password: data.password,
                 noTelepon: data.noTelepon,
             });
-            toast.success('Registrasi berhasil! Silakan cek email untuk verifikasi.');
-            navigate('/login');
+            // Navigate to success page with email
+            navigate('/register-success', { state: { email: data.email } });
         } catch (error) {
             toast.error(error.message || 'Registrasi gagal');
         }

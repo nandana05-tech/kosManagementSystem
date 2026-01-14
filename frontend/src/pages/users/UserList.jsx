@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useUserStore } from '../../features/users/userStore';
-import { formatDate, formatPhone, getInitials } from '../../utils/helpers';
+import { formatDate, formatPhone, getInitials, formatRupiah } from '../../utils/helpers';
 import { ROLES } from '../../utils/constants';
+import { kamarService } from '../../services/kamar.service';
 import toast from 'react-hot-toast';
 import {
     HiPlus,
@@ -17,7 +18,10 @@ import {
     HiX,
     HiChevronLeft,
     HiChevronRight,
-    HiDotsVertical
+    HiDotsVertical,
+    HiSwitchHorizontal,
+    HiHome,
+    HiCurrencyDollar
 } from 'react-icons/hi';
 
 const UserList = () => {
@@ -41,19 +45,30 @@ const UserList = () => {
     const [deleteModal, setDeleteModal] = useState({ show: false, user: null });
     const [isDeleting, setIsDeleting] = useState(false);
     const [activeDropdown, setActiveDropdown] = useState(null);
-    const [dropdownPosition, setDropdownPosition] = useState('below'); // 'below' or 'above'
+    const [dropdownPosition, setDropdownPosition] = useState('below');
     const buttonRefs = useRef({});
+
+    // Pindah Kamar Modal State
+    const [pindahModal, setPindahModal] = useState({
+        show: false,
+        user: null,
+        activeRental: null
+    });
+    const [availableKamar, setAvailableKamar] = useState([]);
+    const [selectedNewKamar, setSelectedNewKamar] = useState('');
+    const [previewData, setPreviewData] = useState(null);
+    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+    const [isProcessingPindah, setIsProcessingPindah] = useState(false);
 
     // Calculate dropdown position based on viewport
     const calculateDropdownPosition = useCallback((buttonElement) => {
         if (!buttonElement) return 'below';
 
         const rect = buttonElement.getBoundingClientRect();
-        const dropdownHeight = 160; // Approximate dropdown height
+        const dropdownHeight = 200;
         const spaceBelow = window.innerHeight - rect.bottom;
         const spaceAbove = rect.top;
 
-        // If not enough space below and more space above, show above
         if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
             return 'above';
         }
@@ -124,6 +139,96 @@ const UserList = () => {
 
     const getStatusBadgeClass = (isActive) => {
         return isActive ? 'badge-success' : 'badge-danger';
+    };
+
+    // ==================== PINDAH KAMAR FUNCTIONS ====================
+    const openPindahModal = async (user) => {
+        setActiveDropdown(null);
+
+        // Find user's active rental
+        const activeRental = user.riwayatSewa?.find(rs => rs.status === 'AKTIF');
+
+        if (!activeRental) {
+            toast.error('Penghuni ini tidak memiliki sewa aktif');
+            return;
+        }
+
+        setPindahModal({
+            show: true,
+            user,
+            activeRental
+        });
+
+        // Fetch available rooms
+        try {
+            const response = await kamarService.getAll({ status: 'TERSEDIA', limit: 100 });
+            setAvailableKamar(response.data || []);
+        } catch (error) {
+            toast.error('Gagal memuat data kamar');
+        }
+    };
+
+    const closePindahModal = () => {
+        setPindahModal({ show: false, user: null, activeRental: null });
+        setSelectedNewKamar('');
+        setPreviewData(null);
+        setAvailableKamar([]);
+    };
+
+    const handleKamarChange = async (kamarId) => {
+        setSelectedNewKamar(kamarId);
+        setPreviewData(null);
+
+        if (!kamarId || !pindahModal.activeRental) return;
+
+        setIsLoadingPreview(true);
+        try {
+            const response = await kamarService.previewPindahKamar(
+                pindahModal.activeRental.id,
+                kamarId
+            );
+            setPreviewData(response.data);
+        } catch (error) {
+            toast.error(error.message || 'Gagal memuat preview');
+        } finally {
+            setIsLoadingPreview(false);
+        }
+    };
+
+    const handleConfirmPindah = async () => {
+        if (!selectedNewKamar || !pindahModal.activeRental) return;
+
+        setIsProcessingPindah(true);
+        try {
+            await kamarService.pindahKamar(
+                pindahModal.activeRental.id,
+                selectedNewKamar
+            );
+            toast.success('Penghuni berhasil dipindahkan ke kamar baru');
+            closePindahModal();
+            // Refresh user list
+            fetchUsers({
+                page: filters.page,
+                limit: filters.limit,
+                ...(filters.search && { search: filters.search }),
+                ...(filters.role && { role: filters.role }),
+                ...(filters.isActive !== '' && { isActive: filters.isActive })
+            });
+        } catch (error) {
+            toast.error(error.message || 'Gagal memindahkan penghuni');
+        } finally {
+            setIsProcessingPindah(false);
+        }
+    };
+
+    // Check if user has active rental
+    const hasActiveRental = (user) => {
+        return user.role === 'PENGHUNI' && user.riwayatSewa?.some(rs => rs.status === 'AKTIF');
+    };
+
+    const getActiveRentalInfo = (user) => {
+        const activeRental = user.riwayatSewa?.find(rs => rs.status === 'AKTIF');
+        return activeRental?.kamar?.namaKamar || null;
     };
 
     return (
@@ -240,8 +345,8 @@ const UserList = () => {
                                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Pengguna</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Kontak</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Role</th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Kamar</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
-                                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Terdaftar</th>
                                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Aksi</th>
                                 </tr>
                             </thead>
@@ -287,12 +392,19 @@ const UserList = () => {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3">
+                                            {getActiveRentalInfo(user) ? (
+                                                <div className="flex items-center gap-2 text-sm">
+                                                    <HiHome className="w-4 h-4 text-green-600" />
+                                                    <span className="text-gray-900">{getActiveRentalInfo(user)}</span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400 text-sm">-</span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3">
                                             <span className={`badge ${getStatusBadgeClass(user.isActive)}`}>
                                                 {user.isActive ? 'Aktif' : 'Nonaktif'}
                                             </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-gray-600">
-                                            {formatDate(user.createdAt)}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <div className="relative inline-block">
@@ -306,7 +418,7 @@ const UserList = () => {
 
                                                 {/* Dropdown Menu */}
                                                 {activeDropdown === user.id && (
-                                                    <div className={`absolute right-0 ${dropdownPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'} bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[160px]`}>
+                                                    <div className={`absolute right-0 ${dropdownPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'} bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[180px]`}>
                                                         <Link
                                                             to={`/users/${user.id}/edit`}
                                                             className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -315,6 +427,18 @@ const UserList = () => {
                                                             <HiPencil className="w-4 h-4" />
                                                             Edit
                                                         </Link>
+
+                                                        {/* Pindah Kamar - only for penghuni with active rental */}
+                                                        {hasActiveRental(user) && (
+                                                            <button
+                                                                onClick={() => openPindahModal(user)}
+                                                                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-blue-50"
+                                                            >
+                                                                <HiSwitchHorizontal className="w-4 h-4" />
+                                                                Pindah Kamar
+                                                            </button>
+                                                        )}
+
                                                         <button
                                                             onClick={() => handleToggleStatus(user.id)}
                                                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -435,6 +559,152 @@ const UserList = () => {
                                     {isDeleting ? 'Menghapus...' : 'Ya, Hapus'}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Pindah Kamar Modal */}
+            {pindahModal.show && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <HiSwitchHorizontal className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-900">Pindah Kamar</h3>
+                                    <p className="text-sm text-gray-500">{pindahModal.user?.name}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 space-y-4">
+                            {/* Current Room Info */}
+                            <div className="bg-gray-50 rounded-lg p-4">
+                                <p className="text-sm text-gray-500 mb-1">Kamar Saat Ini</p>
+                                <div className="flex items-center gap-2">
+                                    <HiHome className="w-5 h-5 text-gray-600" />
+                                    <span className="font-semibold text-gray-900">
+                                        {pindahModal.activeRental?.kamar?.namaKamar}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    Harga: {formatRupiah(pindahModal.activeRental?.hargaSewa || pindahModal.activeRental?.kamar?.hargaPerBulan)}/bulan
+                                </p>
+                            </div>
+
+                            {/* Select New Room */}
+                            <div>
+                                <label className="label">Pilih Kamar Tujuan *</label>
+                                <select
+                                    className="input"
+                                    value={selectedNewKamar}
+                                    onChange={(e) => handleKamarChange(e.target.value)}
+                                >
+                                    <option value="">-- Pilih Kamar --</option>
+                                    {availableKamar.map((kamar) => (
+                                        <option key={kamar.id} value={kamar.id}>
+                                            {kamar.namaKamar} - {formatRupiah(kamar.hargaPerBulan)}/bulan
+                                        </option>
+                                    ))}
+                                </select>
+                                {availableKamar.length === 0 && (
+                                    <p className="text-sm text-orange-600 mt-1">
+                                        Tidak ada kamar tersedia saat ini
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Preview Calculation */}
+                            {isLoadingPreview && (
+                                <div className="flex items-center justify-center py-4">
+                                    <div className="spinner w-6 h-6"></div>
+                                </div>
+                            )}
+
+                            {previewData && !isLoadingPreview && (
+                                <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+                                    <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                                        <HiCurrencyDollar className="w-5 h-5 text-green-600" />
+                                        Perhitungan Prorate
+                                    </h4>
+
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                            <p className="text-gray-500">Sisa periode sewa</p>
+                                            <p className="font-semibold">{previewData.remainingDays} hari</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-gray-500">Akhir sewa</p>
+                                            <p className="font-semibold">{new Date(previewData.rentalEndDate).toLocaleDateString('id-ID')}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="border-t pt-3 space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-600">Harga lama/hari</span>
+                                            <span>{formatRupiah(previewData.oldKamar.dailyRate)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-600">Harga baru/hari</span>
+                                            <span>{formatRupiah(previewData.newKamar.dailyRate)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-600">Selisih/hari</span>
+                                            <span className={previewData.dailyDifference > 0 ? 'text-red-600' : 'text-green-600'}>
+                                                {previewData.dailyDifference > 0 ? '+' : ''}{formatRupiah(previewData.dailyDifference)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Final Result */}
+                                    <div className={`rounded-lg p-3 ${previewData.hasAdjustment ? 'bg-orange-50 border border-orange-200' : 'bg-green-50 border border-green-200'}`}>
+                                        {previewData.hasAdjustment ? (
+                                            <div>
+                                                <p className="font-medium text-orange-800">
+                                                    Tagihan Selisih: {formatRupiah(previewData.proratedDifference)}
+                                                </p>
+                                                <p className="text-sm text-orange-600">
+                                                    Tagihan akan dibuat untuk {previewData.remainingDays} hari sisa bulan ini
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <p className="font-medium text-green-800">
+                                                ✓ Tidak ada tagihan tambahan (kamar baru lebih murah/sama)
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
+                            <button
+                                onClick={closePindahModal}
+                                className="btn-outline flex-1"
+                                disabled={isProcessingPindah}
+                            >
+                                Batal
+                            </button>
+                            <button
+                                onClick={handleConfirmPindah}
+                                disabled={!selectedNewKamar || isProcessingPindah || isLoadingPreview}
+                                className="btn-primary flex-1 disabled:opacity-50"
+                            >
+                                {isProcessingPindah ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                        <span className="spinner w-4 h-4"></span>
+                                        Memproses...
+                                    </span>
+                                ) : (
+                                    'Konfirmasi Pindah'
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>

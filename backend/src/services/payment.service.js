@@ -86,6 +86,18 @@ const createPayment = async (tagihanId, userId) => {
     throw { statusCode: 400, message: 'Tagihan sudah lunas' };
   }
 
+  // Check if there's already a SUCCESS payment for this tagihan
+  const existingSuccessPayment = await prisma.payment.findFirst({
+    where: {
+      tagihanId: parsedTagihanId,
+      status: 'SUCCESS'
+    }
+  });
+
+  if (existingSuccessPayment) {
+    throw { statusCode: 400, message: 'Tagihan ini sudah memiliki pembayaran yang berhasil' };
+  }
+
   // Check if user owns this tagihan
   if (tagihan.userId !== userId) {
     throw { statusCode: 403, message: 'Anda tidak memiliki akses ke tagihan ini' };
@@ -623,6 +635,117 @@ const cancelPayment = async (paymentId, userId, role) => {
 };
 
 /**
+ * Get payments grouped by user (for Pemilik view)
+ * Returns users with their rental info and payment history
+ */
+const getPaymentsGroupedByUser = async (query = {}) => {
+  const { search, paymentStatus, rentalStatus } = query;
+
+  // Build filter for riwayatSewa - only apply if specific status requested
+  const hasRentalFilter = rentalStatus && rentalStatus !== 'SEMUA';
+
+  // Build user where clause - simpler approach
+  const userWhere = {
+    role: 'PENGHUNI',
+    ...(search && {
+      OR: [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } }
+      ]
+    })
+  };
+
+  // Get all penghuni users with their data
+  const users = await prisma.user.findMany({
+    where: userWhere,
+    include: {
+      riwayatSewa: {
+        orderBy: { tanggalMulai: 'desc' },
+        include: {
+          kamar: {
+            select: { id: true, namaKamar: true, nomorKamar: true }
+          }
+        }
+      },
+      payment: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          tagihan: true,
+          riwayatSewa: {
+            include: {
+              kamar: { select: { id: true, namaKamar: true } }
+            }
+          }
+        }
+      }
+    },
+    orderBy: { name: 'asc' }
+  });
+
+  // Transform data to include computed fields
+  const groupedData = users.map(user => {
+    // Filter riwayatSewa by status if needed
+    const filteredRentals = hasRentalFilter 
+      ? user.riwayatSewa.filter(s => s.status === rentalStatus)
+      : user.riwayatSewa;
+
+    // Filter payments by status if needed
+    const filteredPayments = paymentStatus && paymentStatus !== ''
+      ? user.payment.filter(p => p.status === paymentStatus)
+      : user.payment;
+
+    // Get the latest/most relevant rental from filtered list
+    const activeRental = filteredRentals.find(s => s.status === 'AKTIF');
+    const latestRental = filteredRentals[0];
+    const currentRental = activeRental || latestRental;
+
+    // Calculate payment stats for this user (from filtered payments)
+    const paymentStats = {
+      total: filteredPayments.length,
+      success: filteredPayments.filter(p => p.status === 'SUCCESS').length,
+      pending: filteredPayments.filter(p => p.status === 'PENDING').length,
+      failed: filteredPayments.filter(p => ['FAILED', 'EXPIRED', 'CANCEL'].includes(p.status)).length
+    };
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      noTelepon: user.noTelepon,
+      currentKamar: currentRental?.kamar?.namaKamar || null,
+      currentKamarNomor: currentRental?.kamar?.nomorKamar || null,
+      rentalStatus: currentRental?.status || null,
+      rentalStart: currentRental?.tanggalMulai || null,
+      rentalEnd: currentRental?.tanggalBerakhir || null,
+      paymentStats,
+      payments: filteredPayments,
+      hasRentals: filteredRentals.length > 0
+    };
+  });
+
+  // Filter users based on criteria
+  let filteredData = groupedData;
+  
+  // If rental filter is applied, only show users with matching rentals
+  if (hasRentalFilter) {
+    filteredData = filteredData.filter(u => u.hasRentals);
+  } else {
+    // If no rental filter, still only show users who have at least one rental
+    filteredData = filteredData.filter(u => u.hasRentals);
+  }
+
+  // If payment status filter is applied, only show users with matching payments
+  if (paymentStatus && paymentStatus !== '') {
+    filteredData = filteredData.filter(u => u.payments.length > 0);
+  }
+
+  return {
+    users: filteredData,
+    total: filteredData.length
+  };
+};
+
+/**
  * Get payment summary (counts by status)
  */
 const getPaymentSummary = async (userId = null, role = null) => {
@@ -654,5 +777,6 @@ module.exports = {
   checkPaymentStatus,
   syncPaymentStatus,
   cancelPayment,
+  getPaymentsGroupedByUser,
   getPaymentSummary
 };

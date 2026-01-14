@@ -110,6 +110,19 @@ const cancelPayment = async (req, res, next) => {
 };
 
 /**
+ * Get payments grouped by user (Pemilik only)
+ * GET /api/payment/grouped
+ */
+const getPaymentsGroupedByUser = async (req, res, next) => {
+  try {
+    const result = await paymentService.getPaymentsGroupedByUser(req.query);
+    return success(res, 'Berhasil mendapatkan data pembayaran per penghuni', result.users, { total: result.total });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get payment summary (counts by status)
  * GET /api/payment/summary
  */
@@ -131,5 +144,6 @@ module.exports = {
   checkPaymentStatus,
   syncPaymentStatus,
   cancelPayment,
+  getPaymentsGroupedByUser,
   getPaymentSummary
 };

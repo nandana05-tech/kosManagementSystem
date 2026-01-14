@@ -79,6 +79,16 @@ const LaporanForm = () => {
         }
     }, [kamar, user]);
 
+    // Auto-set kamarId for penghuni when their rented room is loaded
+    useEffect(() => {
+        if (user?.role !== 'PEMILIK' && userKamar.length > 0 && !isEdit) {
+            reset(prev => ({
+                ...prev,
+                kamarId: userKamar[0].id
+            }));
+        }
+    }, [userKamar, user, isEdit, reset]);
+
     useEffect(() => {
         if (isEdit && selectedLaporan) {
             reset({
@@ -151,19 +161,47 @@ const LaporanForm = () => {
                             {/* Kamar */}
                             <div>
                                 <label className="label">Kamar *</label>
-                                <select
-                                    className={`input ${errors.kamarId ? 'input-error' : ''}`}
-                                    {...register('kamarId', { required: 'Kamar wajib dipilih' })}
-                                >
-                                    <option value="">Pilih Kamar</option>
-                                    {userKamar.map((k) => (
-                                        <option key={k.id} value={k.id}>
-                                            {k.namaKamar} {k.nomorKamar && `(${k.nomorKamar})`}
-                                        </option>
-                                    ))}
-                                </select>
+                                {user?.role === 'PEMILIK' ? (
+                                    /* Pemilik: Show dropdown to select any room */
+                                    <select
+                                        className={`input ${errors.kamarId ? 'input-error' : ''}`}
+                                        {...register('kamarId', { required: 'Kamar wajib dipilih' })}
+                                    >
+                                        <option value="">Pilih Kamar</option>
+                                        {userKamar.map((k) => (
+                                            <option key={k.id} value={k.id}>
+                                                {k.namaKamar} {k.nomorKamar && `(${k.nomorKamar})`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    /* Penghuni: Show disabled text input with their rented room */
+                                    <>
+                                        <input
+                                            type="text"
+                                            className="input bg-gray-100 cursor-not-allowed"
+                                            value={userKamar.length > 0
+                                                ? `${userKamar[0].namaKamar}${userKamar[0].nomorKamar ? ` (${userKamar[0].nomorKamar})` : ''}`
+                                                : 'Tidak ada kamar yang disewa'
+                                            }
+                                            disabled
+                                            readOnly
+                                        />
+                                        {/* Hidden input for form submission */}
+                                        <input
+                                            type="hidden"
+                                            {...register('kamarId', { required: 'Kamar wajib dipilih' })}
+                                            value={userKamar.length > 0 ? userKamar[0].id : ''}
+                                        />
+                                    </>
+                                )}
                                 {errors.kamarId && (
                                     <p className="error-message">{errors.kamarId.message}</p>
+                                )}
+                                {user?.role !== 'PEMILIK' && userKamar.length === 0 && !loadingKamar && (
+                                    <p className="text-sm text-orange-600 mt-1">
+                                        Anda tidak memiliki kamar yang sedang disewa. Hubungi pemilik kos.
+                                    </p>
                                 )}
                             </div>
 

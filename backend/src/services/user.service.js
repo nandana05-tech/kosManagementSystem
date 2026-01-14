@@ -35,7 +35,22 @@ const getAllUsers = async (query = {}) => {
         role: true,
         isActive: true,
         fotoProfil: true,
-        createdAt: true
+        createdAt: true,
+        riwayatSewa: {
+          where: { status: 'AKTIF' },
+          select: {
+            id: true,
+            status: true,
+            hargaSewa: true,
+            kamar: {
+              select: {
+                id: true,
+                namaKamar: true,
+                hargaPerBulan: true
+              }
+            }
+          }
+        }
       }
     }),
     prisma.user.count({ where })

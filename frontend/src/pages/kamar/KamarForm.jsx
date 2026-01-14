@@ -177,7 +177,22 @@ const KamarForm = () => {
         setPhotoFiles([...photoFiles, ...files]);
     };
 
-    const handleRemovePhoto = (photoId) => {
+    const handleRemovePhoto = async (photoId) => {
+        const photoToRemove = photos.find(p => p.id === photoId);
+
+        // If it's an existing photo from the database, delete it via API
+        if (photoToRemove && photoToRemove.isExisting) {
+            try {
+                const { kamarService } = await import('../../services/kamar.service');
+                await kamarService.deletePhoto(photoId);
+                toast.success('Foto berhasil dihapus');
+            } catch (error) {
+                console.error('Error deleting photo:', error);
+                toast.error('Gagal menghapus foto');
+                return; // Don't remove from local state if API call fails
+            }
+        }
+
         setPhotos(photos.filter(p => p.id !== photoId));
     };
 

@@ -23,6 +23,13 @@ export const authService = {
   },
 
   /**
+   * Resend verification email
+   */
+  resendVerification: async (email) => {
+    return api.post('/auth/resend-verification', { email });
+  },
+
+  /**
    * Forgot password
    */
   forgotPassword: async (email) => {

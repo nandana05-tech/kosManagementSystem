@@ -12,6 +12,7 @@ router.use(authenticate);
 
 // Payment operations
 router.get('/summary', isAuthenticated, paymentController.getPaymentSummary);
+router.get('/grouped', isPemilik, paymentController.getPaymentsGroupedByUser);
 router.get('/', isAuthenticated, paymentController.getAllPayments);
 router.get('/:id', isAuthenticated, paymentController.getPaymentById);
 router.get('/:id/status', isAuthenticated, paymentController.checkPaymentStatus);

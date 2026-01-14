@@ -228,6 +228,54 @@ const extendRental = async (req, res, next) => {
   }
 };
 
+/**
+ * Preview room transfer calculation
+ * GET /api/kamar/rental/:riwayatSewaId/pindah-preview
+ */
+const previewPindahKamar = async (req, res, next) => {
+  try {
+    const bookingService = require('../services/booking.service');
+    const { newKamarId, tanggalPindah } = req.query;
+    
+    if (!newKamarId) {
+      return res.status(400).json({ success: false, message: 'newKamarId wajib diisi' });
+    }
+    
+    const result = await bookingService.previewPindahKamar(
+      req.params.riwayatSewaId,
+      newKamarId,
+      tanggalPindah
+    );
+    return success(res, 'Preview pindah kamar', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Move tenant to different room
+ * POST /api/kamar/rental/:riwayatSewaId/pindah
+ */
+const pindahKamar = async (req, res, next) => {
+  try {
+    const bookingService = require('../services/booking.service');
+    const { newKamarId, tanggalPindah } = req.body;
+    
+    if (!newKamarId) {
+      return res.status(400).json({ success: false, message: 'newKamarId wajib diisi' });
+    }
+    
+    const result = await bookingService.pindahKamar(
+      req.params.riwayatSewaId,
+      newKamarId,
+      tanggalPindah
+    );
+    return success(res, 'Penghuni berhasil dipindahkan ke kamar baru', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   // Kategori
   getAllKategori,
@@ -248,5 +296,7 @@ module.exports = {
   deleteFasilitas,
   // Booking
   bookKamar,
-  extendRental
+  extendRental,
+  previewPindahKamar,
+  pindahKamar
 };

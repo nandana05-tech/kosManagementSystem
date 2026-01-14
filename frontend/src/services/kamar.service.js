@@ -122,6 +122,22 @@ export const kamarService = {
   extendRental: async (riwayatSewaId, durasiPerpanjangan) => {
     return api.post(`/kamar/rental/${riwayatSewaId}/extend`, { durasiPerpanjangan });
   },
+
+  /**
+   * Preview room transfer calculation (Pemilik only)
+   */
+  previewPindahKamar: async (riwayatSewaId, newKamarId, tanggalPindah = null) => {
+    const params = new URLSearchParams({ newKamarId });
+    if (tanggalPindah) params.append('tanggalPindah', tanggalPindah);
+    return api.get(`/kamar/rental/${riwayatSewaId}/pindah-preview?${params.toString()}`);
+  },
+
+  /**
+   * Move tenant to different room (Pemilik only)
+   */
+  pindahKamar: async (riwayatSewaId, newKamarId, tanggalPindah = null) => {
+    return api.post(`/kamar/rental/${riwayatSewaId}/pindah`, { newKamarId, tanggalPindah });
+  },
 };
 
 export default kamarService;

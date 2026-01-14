@@ -50,4 +50,11 @@ router.post('/:id/fasilitas', authenticate, isPemilik, kamarController.addFasili
 // Penghuni: book a room
 router.post('/:id/book', authenticate, kamarController.bookKamar);
 
+// ==================== RENTAL MANAGEMENT ROUTES ====================
+// Pemilik: preview room transfer calculation
+router.get('/rental/:riwayatSewaId/pindah-preview', authenticate, isPemilik, kamarController.previewPindahKamar);
+
+// Pemilik: move tenant to different room
+router.post('/rental/:riwayatSewaId/pindah', authenticate, isPemilik, kamarController.pindahKamar);
+
 module.exports = router;
