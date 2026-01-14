@@ -196,7 +196,7 @@ const extendRental = async (riwayatSewaId, durasiPerpanjangan, userId) => {
       riwayatSewaId: parseInt(riwayatSewaId),
       jenisTagihan: 'SEWA',
       nominal: totalBiaya,
-      tanggalJatuhTempo: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days to pay
+      tanggalJatuhTempo: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day to pay
       status: 'BELUM_LUNAS',
       keterangan: `Perpanjangan sewa kamar ${riwayatSewa.kamar.namaKamar} untuk ${durasiPerpanjangan} bulan`
     }
@@ -340,7 +340,7 @@ const pindahKamar = async (riwayatSewaId, newKamarId, tanggalPindah = null) => {
           riwayatSewaId: newRental.id,
           jenisTagihan: 'SELISIH_PINDAH_KAMAR',
           nominal: proratedDifference,
-          tanggalJatuhTempo: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          tanggalJatuhTempo: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day
           status: 'BELUM_LUNAS',
           keterangan: `Selisih harga pindah kamar dari ${currentRental.kamar.namaKamar} ke ${newKamar.namaKamar} (${remainingDays} hari sisa periode sewa s/d ${oldEndDate.toLocaleDateString('id-ID')})`
         }
