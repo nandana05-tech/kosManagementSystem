@@ -80,6 +80,7 @@ services:
 
 volumes:
   postgres_data:
+  backend_uploads:
 
 
 networks:

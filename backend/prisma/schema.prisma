@@ -189,7 +189,7 @@ enum StatusTagihan {
 model Payment {
   id              Int       @id @default(autoincrement())
   kodePembayaran  String    @unique @map("kode_pembayaran") @db.VarChar(100)
-  tagihanId       Int       @map("tagihan_id")
+  tagihanId       Int?      @map("tagihan_id")
   userId          Int       @map("user_id")
   riwayatSewaId   Int       @map("riwayat_sewa_id")
   paymentMethod   String?   @map("payment_method") @db.VarChar(100)
@@ -208,7 +208,7 @@ model Payment {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  tagihan         Tagihan     @relation(fields: [tagihanId], references: [id])
+  tagihan         Tagihan?    @relation(fields: [tagihanId], references: [id])
   user            User        @relation(fields: [userId], references: [id])
   riwayatSewa     RiwayatSewa @relation(fields: [riwayatSewaId], references: [id])
   verifier        User?       @relation("VerifiedBy", fields: [verifiedBy], references: [id])

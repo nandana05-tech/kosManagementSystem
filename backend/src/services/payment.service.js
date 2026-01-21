@@ -620,17 +620,19 @@ const cancelPayment = async (paymentId, userId, role) => {
 
   // Update payment status to CANCEL (keep as history instead of deleting)
   await prisma.$transaction(async (tx) => {
-    // 1. Update payment status to CANCEL
+    // 1. Update payment status to CANCEL and remove tagihanId reference
     await tx.payment.update({
       where: { id: parseInt(paymentId) },
-      data: { status: 'CANCEL' }
+      data: { 
+        status: 'CANCEL',
+        tagihanId: null  // Set to null before deleting tagihan
+      }
     });
 
-    // 2. Update tagihan status to JATUH_TEMPO
+    // 2. Delete the tagihan
     if (payment.tagihanId) {
-      await tx.tagihan.update({
-        where: { id: payment.tagihanId },
-        data: { status: 'JATUH_TEMPO' }
+      await tx.tagihan.delete({
+        where: { id: payment.tagihanId }
       });
     }
 
