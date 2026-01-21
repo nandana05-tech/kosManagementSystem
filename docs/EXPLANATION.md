@@ -35,27 +35,84 @@ Sistem ini mengimplementasikan arsitektur **MVCS (Model-View-Controller-Service)
 
 ## 1. READ: Melihat Daftar Kamar
 
-> **File:** [KamarList.jsx](/frontend/src/pages/kamar/KamarList.jsx)
+> **File:** [KamarList.jsx](/frontend/src/pages/kamar/KamarList.jsx#L21-L57)
 
 Ketika penghuni mengakses halaman `/kamar`, sistem menampilkan daftar semua kamar yang tersedia.
 
-### View: Memanggil API
+### View: Component State & Fetch
 
 ```jsx
-// KamarList.jsx
-useEffect(() => {
-    const fetchKamar = async () => {
-        const response = await kamarService.getAll(filters);
-        setKamarList(response.data);
-    };
-    fetchKamar();
-}, [filters]);
+// KamarList.jsx - Line 21-57
+const KamarList = () => {
+    const { user } = useAuthStore();
+    const {
+        kamar,
+        kategori,
+        meta,
+        isLoading,
+        fetchKamar,
+        fetchKategori
+    } = useKamarStore();
+
+    const [filters, setFilters] = useState({
+        search: '',
+        status: '',
+        kategoriId: '',
+        page: 1,
+        limit: 12
+    });
+
+    useEffect(() => {
+        fetchKategori();
+    }, []);
+
+    useEffect(() => {
+        const params = {
+            page: filters.page,
+            limit: filters.limit,
+            ...(filters.search && { search: filters.search }),
+            ...(filters.status && { status: filters.status }),
+            ...(filters.kategoriId && { kategoriId: filters.kategoriId })
+        };
+        fetchKamar(params);
+    }, [filters]);
+};
 ```
 
-> **File:** [kamar.service.js (Frontend)](/frontend/src/services/kamar.service.js)
+**Penjelasan:**
+- View menggunakan Zustand store (`useKamarStore`) untuk state management
+- Filter mendukung pencarian, status, dan kategori
+- Data diambil ulang setiap kali filter berubah
+
+### Store: State Management
+
+> **File:** [kamarStore.js](/frontend/src/features/kamar/kamarStore.js#L19-L33)
 
 ```javascript
-// kamar.service.js
+// kamarStore.js - Line 19-33
+fetchKamar: async (params = {}) => {
+    set({ isLoading: true, error: null });
+    try {
+        const response = await kamarService.getAll(params);
+        set({
+            kamar: response.data,
+            meta: response.meta,
+            isLoading: false,
+        });
+        return response;
+    } catch (error) {
+        set({ isLoading: false, error: error.message });
+        throw error;
+    }
+},
+```
+
+### Service (Frontend): API Client
+
+> **File:** [kamar.service.js](/frontend/src/services/kamar.service.js#L37-L39)
+
+```javascript
+// kamar.service.js - Line 37-39
 getAll: async (params = {}) => {
     return api.get('/kamar', { params });
 },
@@ -63,19 +120,20 @@ getAll: async (params = {}) => {
 
 ### Routes: Endpoint Definition
 
-> **File:** [kamar.routes.js](/backend/src/routes/kamar.routes.js)
+> **File:** [kamar.routes.js](/backend/src/routes/kamar.routes.js#L38)
 
 ```javascript
-// kamar.routes.js - Public routes
-router.get('/', kamarController.getAllKamar);
+// kamar.routes.js - Line 38
+// Public/Optional auth: view kamar
+router.get('/', optionalAuth, kamarController.getAllKamar);
 ```
 
 ### Controller: Handle Request
 
-> **File:** [kamar.controller.js](/backend/src/controllers/kamar.controller.js)
+> **File:** [kamar.controller.js](/backend/src/controllers/kamar.controller.js#L60-L71)
 
 ```javascript
-// kamar.controller.js
+// kamar.controller.js - Line 60-71
 const getAllKamar = async (req, res, next) => {
     try {
         const result = await kamarService.getAllKamar(req.query);
@@ -86,21 +144,55 @@ const getAllKamar = async (req, res, next) => {
 };
 ```
 
-### Service: Business Logic
+### Service (Backend): Business Logic
 
-> **File:** [kamar.service.js (Backend)](/backend/src/services/kamar.service.js)
+> **File:** [kamar.service.js](/backend/src/services/kamar.service.js#L60-L99)
 
 ```javascript
-// kamar.service.js
-const getAllKamar = async (query) => {
-    const kamar = await prisma.kamar.findMany({
-        where: { deletedAt: null, status: 'TERSEDIA' },
-        include: { kategori: true, fotoKamar: true },
-        orderBy: { createdAt: 'desc' }
-    });
-    return { kamar };
+// kamar.service.js - Line 60-99
+const getAllKamar = async (query = {}) => {
+    const { page = 1, limit = 10, search, status, kategoriId, minPrice, maxPrice } = query;
+    const pagination = paginate(page, limit);
+
+    const where = {
+        deletedAt: null,
+        ...(search && {
+            OR: [
+                { namaKamar: { contains: search, mode: 'insensitive' } },
+                { nomorKamar: { contains: search, mode: 'insensitive' } }
+            ]
+        }),
+        ...(status && { status }),
+        ...(kategoriId && { kategoriId: parseInt(kategoriId) }),
+        ...(minPrice && { hargaPerBulan: { gte: parseFloat(minPrice) } }),
+        ...(maxPrice && { hargaPerBulan: { lte: parseFloat(maxPrice) } })
+    };
+
+    const [kamar, total] = await Promise.all([
+        prisma.kamar.findMany({
+            where,
+            ...pagination,
+            orderBy: { createdAt: 'desc' },
+            include: {
+                kategori: { select: { namaKategori: true } },
+                fotoKamar: { orderBy: { urutan: 'asc' }, take: 1 },
+                _count: { select: { riwayatSewa: true } }
+            }
+        }),
+        prisma.kamar.count({ where })
+    ]);
+
+    return {
+        kamar,
+        meta: paginationMeta(total, page, limit)
+    };
 };
 ```
+
+**Penjelasan:**
+- Service mendukung filter: search, status, kategoriId, minPrice, maxPrice
+- Query menggunakan Prisma dengan pagination
+- Include relasi kategori dan foto (hanya 1 foto pertama untuk performa)
 
 ### Model: Prisma Schema
 
@@ -109,15 +201,32 @@ const getAllKamar = async (query) => {
 ```prisma
 model Kamar {
   id              Int       @id @default(autoincrement())
-  namaKamar       String    @unique @map("nama_kamar")
-  hargaPerBulan   Decimal?  @map("harga_per_bulan")
+  nomorKamar      String?   @map("nomor_kamar") @db.VarChar(50)
+  namaKamar       String    @unique @map("nama_kamar") @db.VarChar(255)
+  kategoriId      Int?      @map("kategori_id")
+  hargaPerBulan   Decimal?  @map("harga_per_bulan") @db.Decimal(15, 2)
+  luasKamar       Decimal?  @map("luas_kamar") @db.Decimal(10, 2)
+  lantai          Int?
   status          StatusKamar @default(TERSEDIA)
-  
+  deskripsi       String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  // Relations
   kategori        KategoriKamar? @relation(fields: [kategoriId], references: [id])
   fotoKamar       FotoKamar[]
+  fasilitasDetail FasilitasKamar[]
+  inventori       InventoriKamar[]
   riwayatSewa     RiwayatSewa[]
-  
+
   @@map("kamar")
+}
+
+enum StatusKamar {
+  TERSEDIA
+  TERISI
+  PERBAIKAN
 }
 ```
 
@@ -125,29 +234,113 @@ model Kamar {
 
 ## 2. READ: Melihat Detail Kamar
 
-> **File:** [KamarDetail.jsx](/frontend/src/pages/kamar/KamarDetail.jsx)
+> **File:** [KamarDetail.jsx](/frontend/src/pages/kamar/KamarDetail.jsx#L28-L65)
 
-Ketika penghuni mengklik salah satu kamar, sistem menampilkan detail kamar beserta foto dan fasilitas.
+Ketika penghuni mengklik salah satu kamar, sistem menampilkan detail kamar beserta foto, fasilitas, dan opsi pemesanan.
 
-### View: Fetch Detail Kamar
+### View: Component State & Fetch
 
 ```jsx
-// KamarDetail.jsx
-useEffect(() => {
-    const fetchKamar = async () => {
-        const response = await kamarService.getById(id);
-        setKamar(response.data);
-    };
-    fetchKamar();
-}, [id]);
+// KamarDetail.jsx - Line 28-65
+const KamarDetail = () => {
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const { user } = useAuthStore();
+    const {
+        selectedKamar: kamar,
+        isLoading,
+        fetchKamarById,
+        deleteKamar,
+        updateKamarStatus
+    } = useKamarStore();
+
+    const isPemilik = user?.role === 'PEMILIK';
+    const isPenghuni = user?.role === 'PENGHUNI';
+
+    // Booking state
+    const [durasiSewa, setDurasiSewa] = useState(1);
+    const [isBooking, setIsBooking] = useState(false);
+    const [showBookingConfirm, setShowBookingConfirm] = useState(false);
+
+    // Find current user's active rental for this room
+    const myActiveRental = kamar?.riwayatSewa?.find(
+        sewa => sewa.userId === user?.id && sewa.status === 'AKTIF'
+    );
+
+    useEffect(() => {
+        if (id) {
+            fetchKamarById(id);
+        }
+    }, [id]);
+};
 ```
 
-### Service (Backend): Get By ID
+**Penjelasan:**
+- View menggunakan Zustand store dengan `selectedKamar`
+- Mendukung dua role: PEMILIK (edit) dan PENGHUNI (booking)
+- Cek apakah user sedang menyewa kamar ini (`myActiveRental`)
 
-> **File:** [kamar.service.js (Backend)](/backend/src/services/kamar.service.js)
+### Store: Fetch By ID
+
+> **File:** [kamarStore.js](/frontend/src/features/kamar/kamarStore.js#L36-L46)
 
 ```javascript
-// kamar.service.js
+// kamarStore.js - Line 36-46
+fetchKamarById: async (id) => {
+    set({ isLoading: true, error: null });
+    try {
+        const response = await kamarService.getById(id);
+        set({ selectedKamar: response.data, isLoading: false });
+        return response;
+    } catch (error) {
+        set({ isLoading: false, error: error.message });
+        throw error;
+    }
+},
+```
+
+### Service (Frontend): API Client
+
+> **File:** [kamar.service.js](/frontend/src/services/kamar.service.js#L44-L46)
+
+```javascript
+// kamar.service.js - Line 44-46
+getById: async (id) => {
+    return api.get(`/kamar/${id}`);
+},
+```
+
+### Routes: Endpoint Definition
+
+> **File:** [kamar.routes.js](/backend/src/routes/kamar.routes.js#L39)
+
+```javascript
+// kamar.routes.js - Line 39
+router.get('/:id', optionalAuth, kamarController.getKamarById);
+```
+
+### Controller: Handle Request
+
+> **File:** [kamar.controller.js](/backend/src/controllers/kamar.controller.js#L73-L84)
+
+```javascript
+// kamar.controller.js - Line 73-84
+const getKamarById = async (req, res, next) => {
+    try {
+        const kamar = await kamarService.getKamarById(req.params.id);
+        return success(res, 'Berhasil mendapatkan data kamar', kamar);
+    } catch (error) {
+        next(error);
+    }
+};
+```
+
+### Service (Backend): Business Logic
+
+> **File:** [kamar.service.js](/backend/src/services/kamar.service.js#L101-L133)
+
+```javascript
+// kamar.service.js - Line 101-133
 const getKamarById = async (id) => {
     const kamar = await prisma.kamar.findUnique({
         where: { id: parseInt(id), deletedAt: null },
@@ -155,8 +348,19 @@ const getKamarById = async (id) => {
             kategori: true,
             fotoKamar: { orderBy: { urutan: 'asc' } },
             fasilitasDetail: true,
+            inventori: {
+                include: {
+                    barang: {
+                        include: { namaBarang: true }
+                    }
+                }
+            },
+            // Include rental history with user info
             riwayatSewa: {
-                include: { user: { select: { id: true, name: true, email: true } } }
+                orderBy: { tanggalMulai: 'desc' },
+                include: {
+                    user: { select: { id: true, name: true, email: true, noTelepon: true } }
+                }
             }
         }
     });
@@ -170,59 +374,166 @@ const getKamarById = async (id) => {
 ```
 
 **Penjelasan:**
-- Prisma melakukan query `SELECT` dengan `JOIN` ke tabel relasi
-- Data dikembalikan dalam format JSON ke frontend
-- View merender detail kamar beserta foto dan fasilitas
+- Prisma menggunakan `findUnique` dengan `include` untuk relasi lengkap
+- Data include: kategori, semua foto, fasilitas, inventori, dan riwayat sewa
+- Riwayat sewa termasuk data user untuk tampilan riwayat penghuni
 
 ---
 
 ## 3. CREATE: Pemesanan Kamar
 
-> **File:** [KamarDetail.jsx](/frontend/src/pages/kamar/KamarDetail.jsx)
+> **File:** [KamarDetail.jsx](/frontend/src/pages/kamar/KamarDetail.jsx#L491-L548)
 
-Ketika penghuni menekan tombol **"Pesan dan Bayar Sekarang"**:
+Ketika penghuni menekan tombol **"Pesan & Bayar Sekarang"**, sistem menampilkan form pemilihan durasi sewa:
+
+### View: Booking Section UI
 
 ```jsx
-// KamarDetail.jsx
-<button onClick={handleBooking} className="btn-primary">
-    <HiCreditCard className="w-5 h-5" />
-    Pesan dan Bayar Sekarang
-</button>
+// KamarDetail.jsx - Line 491-548
+{/* Booking Section for Penghuni */}
+{isPenghuni && kamar.status === 'TERSEDIA' && (
+    <div className="card">
+        <div className="card-header">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <HiShoppingCart className="w-5 h-5" />
+                Pesan Kamar Ini
+            </h3>
+        </div>
+        <div className="card-body space-y-4">
+            {/* Duration Selector */}
+            <div>
+                <label className="label">Durasi Sewa</label>
+                <select
+                    value={durasiSewa}
+                    onChange={(e) => setDurasiSewa(parseInt(e.target.value))}
+                    className="input w-full"
+                >
+                    {[1, 2, 3, 4, 5, 6, 9, 12].map((bulan) => (
+                        <option key={bulan} value={bulan}>
+                            {bulan} Bulan
+                        </option>
+                    ))}
+                </select>
+            </div>
+
+            {/* Price Summary */}
+            <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between text-gray-600">
+                    <span>Harga per bulan</span>
+                    <span>{formatRupiah(kamar.hargaPerBulan)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                    <span>Durasi</span>
+                    <span>{durasiSewa} bulan</span>
+                </div>
+                <hr className="border-gray-200" />
+                <div className="flex justify-between font-bold text-lg">
+                    <span>Total</span>
+                    <span className="text-primary-600">{formatRupiah(totalHarga)}</span>
+                </div>
+            </div>
+
+            {/* Book Button */}
+            <button
+                onClick={() => setShowBookingConfirm(true)}
+                disabled={isBooking}
+                className="btn-primary w-full inline-flex items-center justify-center gap-2"
+            >
+                <HiCreditCard className="w-5 h-5" />
+                Pesan & Bayar Sekarang
+            </button>
+        </div>
+    </div>
+)}
 ```
 
-### View: Handle Booking
+**Penjelasan:**
+- Form hanya tampil jika user adalah PENGHUNI dan kamar TERSEDIA
+- User dapat memilih durasi sewa (1-12 bulan)
+- Total harga dihitung otomatis: `hargaPerBulan × durasiSewa`
+
+### View: Handle Booking Function
+
+> **File:** [KamarDetail.jsx](/frontend/src/pages/kamar/KamarDetail.jsx#L101-L138)
 
 ```jsx
-// KamarDetail.jsx
-const handleBooking = async () => {
+// KamarDetail.jsx - Line 101-138
+const handleBookRoom = async () => {
+    if (!user) {
+        toast.error('Silakan login terlebih dahulu');
+        navigate('/login');
+        return;
+    }
+
+    setIsBooking(true);
     try {
-        const response = await bookingService.createBooking(
-            kamar.id,
-            durasiSewa
-        );
-        // Redirect ke pembayaran atau tampilkan Midtrans popup
-        handlePayment(response.data.tagihan.id);
+        // Create booking
+        const bookingResponse = await kamarService.bookRoom(id, durasiSewa);
+        const tagihanId = bookingResponse.data?.tagihan?.id;
+
+        if (!tagihanId) {
+            throw new Error('Gagal membuat tagihan');
+        }
+
+        toast.success('Booking berhasil! Melanjutkan ke pembayaran...');
+
+        // Create payment
+        const paymentResponse = await paymentService.create({ tagihanId });
+
+        if (paymentResponse.data?.redirectUrl) {
+            window.location.href = paymentResponse.data.redirectUrl;
+        } else if (paymentResponse.data?.snapRedirectUrl) {
+            window.location.href = paymentResponse.data.snapRedirectUrl;
+        } else {
+            // Redirect to tagihan page to pay later
+            toast.info('Silakan lakukan pembayaran di halaman tagihan');
+            navigate('/tagihan');
+        }
     } catch (error) {
-        toast.error(error.message);
+        toast.error(error.message || 'Gagal melakukan booking');
+    } finally {
+        setIsBooking(false);
+        setShowBookingConfirm(false);
     }
 };
 ```
 
-### Routes: Booking Endpoint
+**Penjelasan:**
+- Validasi login sebelum booking
+- Memanggil `kamarService.bookRoom()` untuk membuat booking + tagihan
+- Langsung membuat payment dan redirect ke Midtrans
 
-> **File:** [kamar.routes.js](/backend/src/routes/kamar.routes.js)
+### Service (Frontend): API Client
+
+> **File:** [kamar.service.js](/frontend/src/services/kamar.service.js#L115-L117)
 
 ```javascript
-// kamar.routes.js - Protected routes
+// kamar.service.js - Line 115-117
+bookRoom: async (kamarId, durasiSewa) => {
+    return api.post(`/kamar/${kamarId}/book`, { durasiSewa });
+},
+```
+
+### Routes: Booking Endpoint
+
+> **File:** [kamar.routes.js](/backend/src/routes/kamar.routes.js#L51)
+
+```javascript
+// kamar.routes.js - Line 51
+// Penghuni: book a room
 router.post('/:id/book', authenticate, kamarController.bookKamar);
 ```
 
 ### Controller: Create Booking
 
-> **File:** [kamar.controller.js](/backend/src/controllers/kamar.controller.js)
+> **File:** [kamar.controller.js](/backend/src/controllers/kamar.controller.js#L195-L211)
 
 ```javascript
-// kamar.controller.js
+// kamar.controller.js - Line 195-211
+/**
+ * Book a room (Penghuni self-service)
+ * POST /api/kamar/:id/book
+ */
 const bookKamar = async (req, res, next) => {
     try {
         const bookingService = require('../services/booking.service');
@@ -242,86 +553,184 @@ const bookKamar = async (req, res, next) => {
 
 ## 4. CREATE: Membuat Tagihan
 
-> **File:** [booking.service.js](/backend/src/services/booking.service.js)
+> **File:** [booking.service.js](/backend/src/services/booking.service.js#L4-L114)
 
-Service `createBooking` melakukan 3 operasi dalam satu transaction:
+Service `createBooking` melakukan validasi dan 3 operasi dalam satu transaction:
+
+### Service (Backend): Business Logic
 
 ```javascript
-// booking.service.js
+// booking.service.js - Line 4-114
+/**
+ * Create a room booking (self-service rental)
+ * Creates RiwayatSewa + initial Tagihan
+ */
 const createBooking = async (userId, kamarId, durasiSewa) => {
-    // Validasi kamar dan user
-    const kamar = await prisma.kamar.findUnique({ where: { id: parseInt(kamarId) } });
-    
-    if (kamar.status !== 'TERSEDIA') {
-        throw { statusCode: 400, message: 'Kamar tidak tersedia' };
+    // Validate duration
+    if (!durasiSewa || durasiSewa < 1 || durasiSewa > 24) {
+        throw { statusCode: 400, message: 'Durasi sewa harus antara 1-24 bulan' };
     }
 
+    // Get kamar
+    const kamar = await prisma.kamar.findUnique({
+        where: { id: parseInt(kamarId) }
+    });
+
+    if (!kamar) {
+        throw { statusCode: 404, message: 'Kamar tidak ditemukan' };
+    }
+
+    if (kamar.status !== 'TERSEDIA') {
+        throw { statusCode: 400, message: 'Kamar tidak tersedia untuk disewa' };
+    }
+
+    if (!kamar.hargaPerBulan) {
+        throw { statusCode: 400, message: 'Harga kamar belum ditentukan' };
+    }
+
+    // Check if user already has active rental
+    const userActiveRental = await prisma.riwayatSewa.findFirst({
+        where: {
+            userId: parseInt(userId),
+            status: 'AKTIF'
+        }
+    });
+
+    if (userActiveRental) {
+        throw { statusCode: 400, message: 'Anda sudah memiliki sewa aktif. Selesaikan dahulu sebelum menyewa kamar lain.' };
+    }
+
+    // Check if kamar already has active rental
+    const kamarActiveRental = await prisma.riwayatSewa.findFirst({
+        where: {
+            kamarId: parseInt(kamarId),
+            status: 'AKTIF'
+        }
+    });
+
+    if (kamarActiveRental) {
+        throw { statusCode: 400, message: 'Kamar ini sedang disewa oleh penghuni lain.' };
+    }
+
+    // Calculate dates
+    const tanggalMulai = new Date();
+    const tanggalBerakhir = new Date();
+    tanggalBerakhir.setMonth(tanggalBerakhir.getMonth() + parseInt(durasiSewa));
+
+    // Calculate total amount
     const totalHarga = parseFloat(kamar.hargaPerBulan) * parseInt(durasiSewa);
 
-    // Transaction: CREATE riwayatSewa, UPDATE kamar, CREATE tagihan
+    // Create booking in transaction
     const result = await prisma.$transaction(async (tx) => {
         // 1. CREATE: RiwayatSewa
+        const kodeSewa = generateCode('SWA');
         const riwayatSewa = await tx.riwayatSewa.create({
             data: {
-                kodeSewa: generateCode('SWA'),
-                userId,
-                kamarId,
-                tanggalMulai: new Date(),
-                tanggalBerakhir: addMonths(new Date(), durasiSewa),
+                kodeSewa,
+                userId: parseInt(userId),
+                kamarId: parseInt(kamarId),
+                tanggalMulai,
+                tanggalBerakhir,
                 hargaSewa: kamar.hargaPerBulan,
                 status: 'AKTIF',
-                durasiBulan: durasiSewa
+                durasiBulan: parseInt(durasiSewa)
             }
         });
 
-        // 2. UPDATE: Status Kamar → TERISI
+        // 2. UPDATE: Kamar status to TERISI immediately
         await tx.kamar.update({
-            where: { id: kamarId },
+            where: { id: parseInt(kamarId) },
             data: { status: 'TERISI' }
         });
 
-        // 3. CREATE: Tagihan
+        // 3. CREATE: Initial Tagihan for payment
+        const nomorTagihan = generateCode('TGH');
         const tagihan = await tx.tagihan.create({
             data: {
-                nomorTagihan: generateCode('TGH'),
-                userId,
+                nomorTagihan,
+                userId: parseInt(userId),
                 riwayatSewaId: riwayatSewa.id,
                 jenisTagihan: 'SEWA',
                 nominal: totalHarga,
-                tanggalJatuhTempo: addDays(new Date(), 1),
+                tanggalJatuhTempo: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day to pay
                 status: 'BELUM_LUNAS',
-                keterangan: `Sewa kamar ${kamar.namaKamar} untuk ${durasiSewa} bulan`
+                keterangan: `Pembayaran sewa kamar ${kamar.namaKamar} untuk ${durasiSewa} bulan`
             }
         });
 
-        return { riwayatSewa, tagihan, totalHarga };
+        return {
+            riwayatSewa,
+            tagihan,
+            kamar,
+            durasiSewa: parseInt(durasiSewa),
+            totalHarga
+        };
     });
 
     return result;
 };
 ```
 
-### Model: Tagihan Schema
+**Penjelasan:**
+- **Validasi durasi**: 1-24 bulan
+- **Validasi kamar**: harus TERSEDIA dan memiliki harga
+- **Validasi user**: tidak boleh memiliki sewa aktif lain
+- **Validasi kamar**: tidak boleh sudah ada penyewa aktif
+- **Transaction**: memastikan semua operasi berhasil atau rollback
+
+### Model: RiwayatSewa & Tagihan Schema
 
 > **File:** [schema.prisma](/backend/prisma/schema.prisma)
 
 ```prisma
+model RiwayatSewa {
+  id              Int       @id @default(autoincrement())
+  kodeSewa        String    @unique @map("kode_sewa") @db.VarChar(100)
+  userId          Int       @map("user_id")
+  kamarId         Int       @map("kamar_id")
+  tanggalMulai    DateTime  @map("tanggal_mulai") @db.Date
+  tanggalBerakhir DateTime  @map("tanggal_berakhir") @db.Date
+  hargaSewa       Decimal?  @map("harga_sewa") @db.Decimal(15, 2)
+  durasiBulan     Int?      @map("durasi_bulan")
+  status          StatusSewa @default(AKTIF)
+  catatan         String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id])
+  kamar           Kamar     @relation(fields: [kamarId], references: [id])
+  tagihan         Tagihan[]
+  payment         Payment[]
+
+  @@map("riwayat_sewa")
+}
+
 model Tagihan {
   id                Int       @id @default(autoincrement())
-  nomorTagihan      String    @unique @map("nomor_tagihan")
+  nomorTagihan      String    @unique @map("nomor_tagihan") @db.VarChar(100)
   riwayatSewaId     Int       @map("riwayat_sewa_id")
   userId            Int       @map("user_id")
-  jenisTagihan      String?   @map("jenis_tagihan")
+  jenisTagihan      String?   @map("jenis_tagihan") @db.VarChar(50)
   nominal           Decimal   @db.Decimal(15, 2)
-  tanggalJatuhTempo DateTime  @map("tanggal_jatuh_tempo")
+  tanggalJatuhTempo DateTime  @map("tanggal_jatuh_tempo") @db.Date
   status            StatusTagihan @default(BELUM_LUNAS)
   keterangan        String?   @db.Text
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
+  // Relations
   riwayatSewa       RiwayatSewa @relation(fields: [riwayatSewaId], references: [id])
   user              User        @relation(fields: [userId], references: [id])
   payment           Payment[]
 
   @@map("tagihan")
+}
+
+enum StatusSewa {
+  AKTIF
+  SELESAI
+  DIBATALKAN
 }
 
 enum StatusTagihan {
@@ -332,81 +741,205 @@ enum StatusTagihan {
 ```
 
 **Penjelasan:**
-- Transaction memastikan semua operasi berhasil atau tidak sama sekali
-- Tagihan otomatis dibuat dengan status `BELUM_LUNAS`
-- Kamar langsung diubah statusnya menjadi `TERISI`
+- **RiwayatSewa**: menyimpan data sewa dengan relasi ke User dan Kamar
+- **Tagihan**: menyimpan data tagihan dengan relasi ke RiwayatSewa
+- Jatuh tempo tagihan: 1 hari setelah booking dibuat
+- Kamar langsung berubah status menjadi `TERISI` saat booking
 
 ---
 
 ## 5. CREATE: Membuat Pembayaran
 
-> **File:** [TagihanList.jsx](/frontend/src/pages/tagihan/TagihanList.jsx)
+> **File:** [TagihanList.jsx](/frontend/src/pages/tagihan/TagihanList.jsx#L174-L212)
 
 Ketika penghuni menekan tombol **"Bayar"** pada tagihan:
 
-```jsx
-// TagihanList.jsx
-const handlePayNow = async (tagihanItem) => {
-    try {
-        const response = await paymentService.create({ tagihanId: tagihanItem.id });
+### View: Handle Pay Now
 
-        if (response.data?.snapToken) {
+```jsx
+// TagihanList.jsx - Line 174-212
+const handlePayNow = async (tagihanItem) => {
+    setPayingId(tagihanItem.id);
+    try {
+        const response = await paymentService.create({
+            tagihanId: tagihanItem.id
+        });
+
+        // Prefer redirect URL for simplicity
+        if (response.data?.redirectUrl) {
+            window.location.href = response.data.redirectUrl;
+        } else if (response.data?.snapRedirectUrl) {
+            window.location.href = response.data.snapRedirectUrl;
+        } else if (response.data?.snapToken && window.snap) {
+            // Use Midtrans Snap popup if available
             window.snap.pay(response.data.snapToken, {
                 onSuccess: () => {
                     toast.success('Pembayaran berhasil!');
-                    navigate('/payment?order_id=' + response.data.payment?.kodePembayaran);
+                    fetchTagihan(filters);
+                    fetchSummary();
                 },
-                onPending: () => toast.info('Menunggu pembayaran...'),
-                onError: () => toast.error('Pembayaran gagal'),
-                onClose: () => toast.info('Popup ditutup')
+                onPending: () => {
+                    toast.info('Menunggu pembayaran...');
+                },
+                onError: () => {
+                    toast.error('Pembayaran gagal');
+                },
+                onClose: () => {
+                    toast.info('Pembayaran dibatalkan');
+                }
             });
+        } else {
+            toast.error('Tidak dapat memproses pembayaran. Coba lagi nanti.');
         }
     } catch (error) {
-        toast.error(error.message);
+        toast.error(error.message || 'Gagal memproses pembayaran');
+    } finally {
+        setPayingId(null);
     }
 };
 ```
 
-### Routes: Payment Endpoint
+**Penjelasan:**
+- Prioritas redirect URL untuk kemudahan (tanpa popup)
+- Fallback ke Snap popup jika redirect URL tidak tersedia
+- State `payingId` untuk menandai tagihan yang sedang diproses
 
-> **File:** [payment.routes.js](/backend/src/routes/payment.routes.js)
+### Service (Frontend): Create Payment
+
+> **File:** [payment.service.js](/frontend/src/services/payment.service.js#L18-L23)
 
 ```javascript
-// payment.routes.js
-router.post('/', isAuthenticated, paymentController.createPayment);
+// payment.service.js - Line 18-23
+/**
+ * Create payment (initiate Midtrans transaction)
+ */
+create: async (data) => {
+    return api.post('/payment', data);
+},
 ```
 
-### Service (Backend): Create Payment
+### Controller: Create Payment
 
-> **File:** [payment.service.js](/backend/src/services/payment.service.js)
+> **File:** [payment.controller.js](/backend/src/controllers/payment.controller.js#L30-L41)
 
 ```javascript
-// payment.service.js
+// payment.controller.js - Line 30-41
+/**
+ * Create payment (Penghuni)
+ * POST /api/payment
+ */
+const createPayment = async (req, res, next) => {
+    try {
+        const result = await paymentService.createPayment(req.body.tagihanId, req.user.id);
+        return created(res, 'Pembayaran berhasil dibuat', result);
+    } catch (error) {
+        next(error);
+    }
+};
+```
+
+### Service (Backend): Create Payment Logic
+
+> **File:** [payment.service.js](/backend/src/services/payment.service.js#L64-L184)
+
+```javascript
+// payment.service.js - Line 64-184
 const createPayment = async (tagihanId, userId) => {
+    // Validate tagihanId
+    if (!tagihanId || isNaN(parseInt(tagihanId))) {
+        throw { statusCode: 400, message: 'Tagihan ID tidak valid' };
+    }
+
+    const parsedTagihanId = parseInt(tagihanId);
+
+    // Get tagihan
     const tagihan = await prisma.tagihan.findUnique({
-        where: { id: parseInt(tagihanId) },
-        include: { user: true, riwayatSewa: { include: { kamar: true } } }
+        where: { id: parsedTagihanId },
+        include: {
+            user: true,
+            riwayatSewa: { include: { kamar: true } }
+        }
     });
+
+    if (!tagihan) {
+        throw { statusCode: 404, message: 'Tagihan tidak ditemukan' };
+    }
 
     if (tagihan.status === 'LUNAS') {
         throw { statusCode: 400, message: 'Tagihan sudah lunas' };
     }
 
+    // Check if there's already a SUCCESS payment for this tagihan
+    const existingSuccessPayment = await prisma.payment.findFirst({
+        where: {
+            tagihanId: parsedTagihanId,
+            status: 'SUCCESS'
+        }
+    });
+
+    if (existingSuccessPayment) {
+        throw { statusCode: 400, message: 'Tagihan ini sudah memiliki pembayaran yang berhasil' };
+    }
+
+    // Check if there's an existing PENDING payment with valid token (created within 24 hours)
+    const existingPendingPayment = await prisma.payment.findFirst({
+        where: {
+            tagihanId: parsedTagihanId,
+            status: 'PENDING',
+            snapToken: { not: null },
+            createdAt: {
+                gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Created within last 24 hours
+            }
+        },
+        include: { tagihan: true }
+    });
+
+    // If valid pending payment exists, return it instead of creating new one
+    if (existingPendingPayment && existingPendingPayment.snapToken) {
+        return {
+            payment: existingPendingPayment,
+            snapToken: existingPendingPayment.snapToken,
+            redirectUrl: existingPendingPayment.snapRedirectUrl,
+            isReused: true // Flag to indicate this is an existing payment
+        };
+    }
+
+    // Check if user owns this tagihan
+    if (tagihan.userId !== userId) {
+        throw { statusCode: 403, message: 'Anda tidak memiliki akses ke tagihan ini' };
+    }
+
     const kodePembayaran = generateCode('PAY');
 
-    // Call Midtrans API
-    const transaction = await snap.createTransaction({
+    // Create Midtrans transaction
+    const parameter = {
         transaction_details: {
             order_id: kodePembayaran,
             gross_amount: parseInt(tagihan.nominal)
         },
         customer_details: {
             first_name: tagihan.user.name,
-            email: tagihan.user.email
+            email: tagihan.user.email,
+            phone: tagihan.user.noTelepon || ''
+        },
+        item_details: [{
+            id: tagihan.nomorTagihan,
+            price: parseInt(tagihan.nominal),
+            quantity: 1,
+            name: `Pembayaran ${tagihan.jenisTagihan || 'Sewa'} - ${tagihan.riwayatSewa.kamar.namaKamar}`
+        }],
+        callbacks: {
+            finish: `${process.env.FRONTEND_URL}/payment/finish`
+        },
+        expiry: {
+            unit: 'hours',
+            duration: 24
         }
-    });
+    };
 
-    // CREATE: Payment record
+    const transaction = await snap.createTransaction(parameter);
+
+    // Create payment record
     const payment = await prisma.payment.create({
         data: {
             kodePembayaran,
@@ -417,12 +950,25 @@ const createPayment = async (tagihanId, userId) => {
             status: 'PENDING',
             snapToken: transaction.token,
             snapRedirectUrl: transaction.redirect_url
-        }
+        },
+        include: { tagihan: true }
     });
 
-    return { payment, snapToken: transaction.token, redirectUrl: transaction.redirect_url };
+    return {
+        payment,
+        snapToken: transaction.token,
+        redirectUrl: transaction.redirect_url
+    };
 };
 ```
+
+**Penjelasan:**
+- **Validasi tagihan**: harus ada dan belum LUNAS
+- **Cek duplikat**: tidak boleh ada payment SUCCESS untuk tagihan ini
+- **Reuse pending payment**: jika sudah ada payment PENDING dalam 24 jam, gunakan yang ada
+- **Cek ownership**: user harus pemilik tagihan
+- **Midtrans integration**: membuat transaksi dengan item details dan callback URL
+- **Expiry**: payment berlaku 24 jam
 
 ### Model: Payment Schema
 
@@ -431,17 +977,25 @@ const createPayment = async (tagihanId, userId) => {
 ```prisma
 model Payment {
   id              Int       @id @default(autoincrement())
-  kodePembayaran  String    @unique @map("kode_pembayaran")
+  kodePembayaran  String    @unique @map("kode_pembayaran") @db.VarChar(100)
   tagihanId       Int?      @map("tagihan_id")
   userId          Int       @map("user_id")
-  grossAmount     Decimal   @map("gross_amount")
+  riwayatSewaId   Int       @map("riwayat_sewa_id")
+  grossAmount     Decimal   @map("gross_amount") @db.Decimal(15, 2)
   status          StatusPayment @default(PENDING)
-  snapToken       String?   @map("snap_token")
-  snapRedirectUrl String?   @map("snap_redirect_url")
+  snapToken       String?   @map("snap_token") @db.Text
+  snapRedirectUrl String?   @map("snap_redirect_url") @db.Text
+  transactionId   String?   @map("transaction_id") @db.VarChar(255)
+  paymentMethod   String?   @map("payment_method") @db.VarChar(100)
+  paymentGateway  String?   @map("payment_gateway") @db.VarChar(100)
   paidAt          DateTime? @map("paid_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
+  // Relations
   tagihan         Tagihan?    @relation(fields: [tagihanId], references: [id])
   user            User        @relation(fields: [userId], references: [id])
+  riwayatSewa     RiwayatSewa @relation(fields: [riwayatSewaId], references: [id])
 
   @@map("payment")
 }
@@ -459,27 +1013,110 @@ enum StatusPayment {
 
 ## 6. READ: Melihat Daftar Tagihan
 
-> **File:** [TagihanList.jsx](/frontend/src/pages/tagihan/TagihanList.jsx)
+> **File:** [TagihanList.jsx](/frontend/src/pages/tagihan/TagihanList.jsx#L28-L136)
 
 Ketika penghuni mengakses halaman `/tagihan`:
 
+### View: Component State & Fetch
+
 ```jsx
-// TagihanList.jsx
-useEffect(() => {
-    const fetchTagihan = async () => {
-        const response = await tagihanService.getAll(filters);
-        setTagihanList(response.data);
+// TagihanList.jsx - Line 28-136
+const TagihanList = () => {
+    const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const { user } = useAuthStore();
+    const {
+        tagihan,
+        summary,
+        meta,
+        isLoading,
+        fetchTagihan,
+        fetchSummary,
+        generateMonthly,
+        deleteTagihan
+    } = useTagihanStore();
+
+    const isPemilik = user?.role === 'PEMILIK';
+
+    const [filters, setFilters] = useState({
+        search: '',
+        status: '',
+        page: 1,
+        limit: 10
+    });
+
+    useEffect(() => {
+        fetchSummary();
+    }, []);
+
+    useEffect(() => {
+        const params = {
+            page: filters.page,
+            limit: filters.limit,
+            ...(filters.status && { status: filters.status })
+        };
+        fetchTagihan(params);
+    }, [filters]);
+
+    const handleFilterChange = (key, value) => {
+        setFilters(prev => ({ ...prev, [key]: value, page: 1 }));
     };
-    fetchTagihan();
-}, [filters]);
+
+    const handlePageChange = (newPage) => {
+        setFilters(prev => ({ ...prev, page: newPage }));
+    };
+};
+```
+
+**Penjelasan:**
+- View menggunakan Zustand store (`useTagihanStore`) untuk state management
+- Mendukung filter status dan pagination
+- Summary dan tagihan difetch saat halaman dimuat
+
+### Store: Fetch Tagihan
+
+> **File:** [tagihanStore.js](/frontend/src/features/tagihan/tagihanStore.js)
+
+```javascript
+// tagihanStore.js - fetchTagihan
+fetchTagihan: async (params = {}) => {
+    set({ isLoading: true, error: null });
+    try {
+        const response = await tagihanService.getAll(params);
+        set({
+            tagihan: response.data,
+            meta: response.meta,
+            isLoading: false,
+        });
+        return response;
+    } catch (error) {
+        set({ isLoading: false, error: error.message });
+        throw error;
+    }
+},
+```
+
+### Service (Frontend): API Client
+
+> **File:** [tagihan.service.js](/frontend/src/services/tagihan.service.js#L7-L9)
+
+```javascript
+// tagihan.service.js - Line 7-9
+getAll: async (params = {}) => {
+    return api.get('/tagihan', { params });
+},
 ```
 
 ### Controller: Get All Tagihan
 
-> **File:** [tagihan.controller.js](/backend/src/controllers/tagihan.controller.js)
+> **File:** [tagihan.controller.js](/backend/src/controllers/tagihan.controller.js#L4-L15)
 
 ```javascript
-// tagihan.controller.js
+// tagihan.controller.js - Line 4-15
+/**
+ * Get all tagihan
+ * GET /api/tagihan
+ */
 const getAllTagihan = async (req, res, next) => {
     try {
         const result = await tagihanService.getAllTagihan(req.query, req.user.id, req.user.role);
@@ -490,42 +1127,157 @@ const getAllTagihan = async (req, res, next) => {
 };
 ```
 
+### Service (Backend): Business Logic
+
+> **File:** [tagihan.service.js](/backend/src/services/tagihan.service.js#L5-L40)
+
+```javascript
+// tagihan.service.js - Line 5-40
+const getAllTagihan = async (query = {}, userId = null, role = null) => {
+    const { page = 1, limit = 10, status, userId: filterUserId } = query;
+    const pagination = paginate(page, limit);
+
+    const where = {
+        // If penghuni, only show their own tagihan
+        ...(role === 'PENGHUNI' && { userId }),
+        // If pemilik filtering by user
+        ...(role === 'PEMILIK' && filterUserId && { userId: parseInt(filterUserId) }),
+        ...(status && { status })
+    };
+
+    const [tagihan, total] = await Promise.all([
+        prisma.tagihan.findMany({
+            where,
+            ...pagination,
+            orderBy: { tanggalJatuhTempo: 'asc' },
+            include: {
+                user: { select: { id: true, name: true, email: true } },
+                riwayatSewa: {
+                    include: { kamar: { select: { id: true, namaKamar: true } } }
+                },
+                payment: { select: { id: true, status: true, paidAt: true } }
+            }
+        }),
+        prisma.tagihan.count({ where })
+    ]);
+
+    return {
+        tagihan,
+        meta: paginationMeta(total, page, limit)
+    };
+};
+```
+
 **Penjelasan:**
-- Penghuni hanya melihat tagihan miliknya sendiri
-- Pemilik dapat melihat semua tagihan
-- Filter berdasarkan `userId` diterapkan di service layer
+- **Role-based filtering**: Penghuni hanya melihat tagihan sendiri
+- **Pemilik**: dapat melihat semua atau filter per user
+- **OrderBy**: diurutkan berdasarkan jatuh tempo (ASC)
+- **Include**: relasi user, kamar, dan status payment
 
 ---
 
 ## 7. READ: Melihat Daftar Pembayaran
 
-> **File:** [PaymentList.jsx](/frontend/src/pages/payment/PaymentList.jsx)
+> **File:** [PaymentList.jsx](/frontend/src/pages/payment/PaymentList.jsx#L29-L149)
 
-Ketika penghuni mengakses halaman `/payment`:
+Ketika penghuni atau pemilik mengakses halaman `/payment`:
+
+### View: Component State & Fetch
 
 ```jsx
-// PaymentList.jsx
-const fetchPayments = async () => {
-    const response = await paymentService.getAll({
-        page: filters.page,
-        limit: filters.limit,
-        status: filters.status
-    });
-    setPayments(response.data);
-    setMeta(response.meta);
-};
+// PaymentList.jsx - Line 29-149
+const PaymentList = () => {
+    const { user } = useAuthStore();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const isPemilik = user?.role === 'PEMILIK';
 
-useEffect(() => {
-    fetchPayments();
-}, [filters]);
+    // State for regular (penghuni) view
+    const [payments, setPayments] = useState([]);
+    const [meta, setMeta] = useState(null);
+
+    // State for grouped (pemilik) view
+    const [groupedUsers, setGroupedUsers] = useState([]);
+    const [expandedUsers, setExpandedUsers] = useState({});
+
+    // Common state
+    const [isLoading, setIsLoading] = useState(true);
+    const [summary, setSummary] = useState({ total: 0, success: 0, pending: 0, failed: 0 });
+
+    // Filters for pemilik view
+    const [pemilikFilters, setPemilikFilters] = useState({
+        search: '',
+        paymentStatus: '',
+        rentalStatus: 'SEMUA'
+    });
+
+    // Filters for penghuni view
+    const [filters, setFilters] = useState({
+        status: '',
+        page: 1,
+        limit: 10
+    });
+
+    const [cancelModal, setCancelModal] = useState({ isOpen: false, paymentId: null, isLoading: false });
+
+    // Fetch for pemilik (grouped view)
+    const fetchGroupedPayments = async () => {
+        setIsLoading(true);
+        try {
+            const params = {
+                ...(pemilikFilters.search && { search: pemilikFilters.search }),
+                ...(pemilikFilters.paymentStatus && { paymentStatus: pemilikFilters.paymentStatus }),
+                ...(pemilikFilters.rentalStatus && { rentalStatus: pemilikFilters.rentalStatus })
+            };
+            const response = await paymentService.getGroupedByUser(params);
+            setGroupedUsers(response.data || []);
+        } catch (error) {
+            toast.error(error.message || 'Gagal memuat data pembayaran');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Fetch for penghuni (regular view)
+    const fetchPayments = async () => {
+        setIsLoading(true);
+        try {
+            const params = {
+                page: filters.page,
+                limit: filters.limit,
+                ...(filters.status && { status: filters.status })
+            };
+            const response = await paymentService.getAll(params);
+            setPayments(response.data || []);
+            setMeta(response.meta);
+        } catch (error) {
+            toast.error(error.message || 'Gagal memuat data pembayaran');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchSummary();
+        if (isPemilik) {
+            fetchGroupedPayments();
+        } else {
+            fetchPayments();
+        }
+    }, [isPemilik, filters, pemilikFilters]);
+};
 ```
 
-### Service (Frontend): Payment Service
+**Penjelasan:**
+- **Dual view**: Pemilik melihat grouped by user, Penghuni melihat list biasa
+- **State terpisah**: Pemilik dan Penghuni punya filter berbeda
+- **Cancel modal**: untuk membatalkan payment PENDING
 
-> **File:** [payment.service.js (Frontend)](/frontend/src/services/payment.service.js)
+### Service (Frontend): Payment API Client
+
+> **File:** [payment.service.js](/frontend/src/services/payment.service.js)
 
 ```javascript
-// payment.service.js
+// payment.service.js - Complete service
 export const paymentService = {
     getAll: async (params = {}) => {
         return api.get('/payment', { params });
@@ -536,8 +1288,20 @@ export const paymentService = {
     create: async (data) => {
         return api.post('/payment', data);
     },
+    verify: async (id) => {
+        return api.post(`/payment/${id}/verify`);
+    },
+    checkStatus: async (id) => {
+        return api.get(`/payment/${id}/status`);
+    },
+    syncStatus: async (orderId) => {
+        return api.get(`/payment/sync/${orderId}`);
+    },
     cancel: async (id) => {
         return api.post(`/payment/${id}/cancel`);
+    },
+    getGroupedByUser: async (params = {}) => {
+        return api.get('/payment/grouped', { params });
     },
     getSummary: async () => {
         return api.get('/payment/summary');
@@ -545,20 +1309,87 @@ export const paymentService = {
 };
 ```
 
+### Controller: Get All Payments
+
+> **File:** [payment.controller.js](/backend/src/controllers/payment.controller.js#L4-L15)
+
+```javascript
+// payment.controller.js - Line 4-15
+/**
+ * Get all payments
+ * GET /api/payment
+ */
+const getAllPayments = async (req, res, next) => {
+    try {
+        const result = await paymentService.getAllPayments(req.query, req.user.id, req.user.role);
+        return success(res, 'Berhasil mendapatkan daftar pembayaran', result.payments, result.meta);
+    } catch (error) {
+        next(error);
+    }
+};
+```
+
+### Service (Backend): Business Logic
+
+> **File:** [payment.service.js](/backend/src/services/payment.service.js#L7-L39)
+
+```javascript
+// payment.service.js - Line 7-39
+const getAllPayments = async (query = {}, userId = null, role = null) => {
+    const { page = 1, limit = 10, status } = query;
+    const pagination = paginate(page, limit);
+
+    const where = {
+        ...(role === 'PENGHUNI' && { userId }),
+        ...(status && { status })
+    };
+
+    const [payments, total] = await Promise.all([
+        prisma.payment.findMany({
+            where,
+            ...pagination,
+            orderBy: { createdAt: 'desc' },
+            include: {
+                user: { select: { id: true, name: true, email: true } },
+                tagihan: true,
+                riwayatSewa: {
+                    include: { kamar: { select: { id: true, namaKamar: true } } }
+                }
+            }
+        }),
+        prisma.payment.count({ where })
+    ]);
+
+    return {
+        payments,
+        meta: paginationMeta(total, page, limit)
+    };
+};
+```
+
+**Penjelasan:**
+- **Role-based filtering**: Penghuni hanya melihat payment sendiri
+- **OrderBy**: diurutkan berdasarkan waktu pembuatan (DESC, terbaru di atas)
+- **Include**: relasi user, tagihan, kamar untuk tampilan lengkap
+
 ---
 
 ## 8. UPDATE & DELETE: Pembatalan Pembayaran
 
-> **File:** [PaymentList.jsx](/frontend/src/pages/payment/PaymentList.jsx)
+> **File:** [PaymentList.jsx](/frontend/src/pages/payment/PaymentList.jsx#L202-L226)
 
-Ketika penghuni menekan tombol **"X"** (Batalkan) pada payment dengan status `PENDING`:
+Ketika penghuni atau pemilik menekan tombol **"Batalkan"** pada payment dengan status `PENDING`:
 
-### View: Handle Cancel
+### View: Handle Cancel Modal
 
 ```jsx
-// PaymentList.jsx
+// PaymentList.jsx - Line 202-226
 const openCancelModal = (paymentId) => {
     setCancelModal({ isOpen: true, paymentId, isLoading: false });
+};
+
+const closeCancelModal = () => {
+    setCancelModal({ isOpen: false, paymentId: null, isLoading: false });
 };
 
 const handleCancelPayment = async () => {
@@ -567,33 +1398,63 @@ const handleCancelPayment = async () => {
         await paymentService.cancel(cancelModal.paymentId);
         toast.success('Pembayaran berhasil dibatalkan');
         closeCancelModal();
-        fetchPayments();  // Refresh data
+        if (isPemilik) {
+            fetchGroupedPayments();
+        } else {
+            fetchPayments();
+        }
+        fetchSummary();
     } catch (error) {
-        toast.error(error.message);
+        toast.error(error.message || 'Gagal membatalkan pembayaran');
+        setCancelModal(prev => ({ ...prev, isLoading: false }));
     }
 };
 ```
 
-### Routes: Cancel Endpoint
+**Penjelasan:**
+- Modal konfirmasi sebelum membatalkan
+- Setelah sukses, refresh data dan summary
+- Pemilik dan Penghuni bisa membatalkan (dengan validasi ownership di backend)
 
-> **File:** [payment.routes.js](/backend/src/routes/payment.routes.js)
+### Service (Frontend): Cancel API
+
+> **File:** [payment.service.js](/frontend/src/services/payment.service.js#L47-L51)
 
 ```javascript
-// payment.routes.js
+// payment.service.js - Line 47-51
+/**
+ * Cancel payment
+ */
+cancel: async (id) => {
+    return api.post(`/payment/${id}/cancel`);
+},
+```
+
+### Routes: Cancel Endpoint
+
+> **File:** [payment.routes.js](/backend/src/routes/payment.routes.js#L21-L22)
+
+```javascript
+// payment.routes.js - Line 21-22
+// Cancel payment - both pemilik and penghuni can cancel
 router.post('/:id/cancel', isAuthenticated, paymentController.cancelPayment);
 ```
 
 ### Controller: Cancel Payment
 
-> **File:** [payment.controller.js](/backend/src/controllers/payment.controller.js)
+> **File:** [payment.controller.js](/backend/src/controllers/payment.controller.js#L95-L110)
 
 ```javascript
-// payment.controller.js
+// payment.controller.js - Line 95-110
+/**
+ * Cancel payment
+ * POST /api/payment/:id/cancel
+ */
 const cancelPayment = async (req, res, next) => {
     try {
         const payment = await paymentService.cancelPayment(
-            req.params.id,
-            req.user.id,
+            req.params.id, 
+            req.user.id, 
             req.user.role
         );
         return success(res, 'Pembayaran berhasil dibatalkan', payment);
@@ -605,136 +1466,295 @@ const cancelPayment = async (req, res, next) => {
 
 ### Service (Backend): Cancel Payment Logic
 
-> **File:** [payment.service.js](/backend/src/services/payment.service.js)
+> **File:** [payment.service.js](/backend/src/services/payment.service.js#L591-L660)
 
 ```javascript
-// payment.service.js
+// payment.service.js - Line 591-660
+/**
+ * Cancel payment (by user or owner)
+ */
 const cancelPayment = async (paymentId, userId, role) => {
     const payment = await prisma.payment.findUnique({
         where: { id: parseInt(paymentId) },
-        include: { tagihan: true, riwayatSewa: { include: { kamar: true } } }
+        include: { 
+            tagihan: true, 
+            user: true,
+            riwayatSewa: { include: { kamar: true } }
+        }
     });
 
-    // Validasi: Hanya status PENDING yang bisa dibatalkan
-    if (payment.status !== 'PENDING') {
-        throw { statusCode: 400, message: 'Hanya pembayaran PENDING yang dapat dibatalkan' };
+    if (!payment) {
+        throw { statusCode: 404, message: 'Payment tidak ditemukan' };
     }
 
+    // Only allow cancellation for PENDING payments
+    if (payment.status !== 'PENDING') {
+        throw { statusCode: 400, message: 'Hanya pembayaran dengan status PENDING yang dapat dibatalkan' };
+    }
+
+    // Check authorization: penghuni can only cancel their own, pemilik can cancel any
+    if (role === 'PENGHUNI' && payment.userId !== userId) {
+        throw { statusCode: 403, message: 'Tidak memiliki akses untuk membatalkan pembayaran ini' };
+    }
+
+    // Check if this is an extension payment
     const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
 
-    // Transaction: UPDATE + DELETE + UPDATE + UPDATE
+    // Update payment status to CANCEL (keep as history instead of deleting)
     await prisma.$transaction(async (tx) => {
-        // 1. UPDATE: Payment status → CANCEL, tagihanId → null
+        // 1. Update payment status to CANCEL and remove tagihanId reference
         await tx.payment.update({
             where: { id: parseInt(paymentId) },
-            data: { status: 'CANCEL', tagihanId: null }
+            data: { 
+                status: 'CANCEL',
+                tagihanId: null  // Set to null before deleting tagihan
+            }
         });
 
-        // 2. DELETE: Tagihan
+        // 2. Delete the tagihan
         if (payment.tagihanId) {
             await tx.tagihan.delete({
                 where: { id: payment.tagihanId }
             });
         }
 
-        // 3. UPDATE: RiwayatSewa → DIBATALKAN (untuk booking baru)
+        // 3. For new bookings (not extension), update riwayatSewa and kamar
         if (!isExtension && payment.riwayatSewaId) {
             await tx.riwayatSewa.update({
                 where: { id: payment.riwayatSewaId },
-                data: { status: 'DIBATALKAN', tanggalBerakhir: new Date() }
+                data: { 
+                    status: 'DIBATALKAN',
+                    tanggalBerakhir: new Date()
+                }
             });
 
-            // 4. UPDATE: Kamar → TERSEDIA
-            await tx.kamar.update({
-                where: { id: payment.riwayatSewa.kamarId },
-                data: { status: 'TERSEDIA' }
-            });
+            // Update kamar to TERSEDIA
+            if (payment.riwayatSewa?.kamarId) {
+                await tx.kamar.update({
+                    where: { id: payment.riwayatSewa.kamarId },
+                    data: { status: 'TERSEDIA' }
+                });
+            }
         }
     });
 
-    return { message: 'Pembayaran berhasil dibatalkan' };
+    return { message: isExtension ? 'Perpanjangan sewa berhasil dibatalkan.' : 'Pembayaran berhasil dibatalkan' };
 };
 ```
 
 **Penjelasan:**
-- **UPDATE**: Status payment berubah menjadi `CANCEL`
-- **DELETE**: Tagihan dihapus dari database
-- **UPDATE**: RiwayatSewa menjadi `DIBATALKAN`
-- **UPDATE**: Kamar kembali `TERSEDIA`
-- Semua operasi dalam transaction untuk konsistensi data
+- **Validasi status**: Hanya PENDING yang bisa dibatalkan
+- **Validasi ownership**: Penghuni hanya bisa cancel milik sendiri, Pemilik bisa cancel semua
+- **Transaction**:
+  1. **UPDATE Payment**: status → CANCEL, tagihanId → null
+  2. **DELETE Tagihan**: hapus dari database
+  3. **UPDATE RiwayatSewa**: status → DIBATALKAN (untuk booking baru, bukan perpanjangan)
+  4. **UPDATE Kamar**: status → TERSEDIA
+- **Perpanjangan**: Jika pembatalan perpanjangan, kamar tetap TERISI
 
 ---
 
 ## 9. UPDATE: Pembayaran Berhasil
 
-> **File:** [payment.routes.js](/backend/src/routes/payment.routes.js)
+> **File:** [payment.routes.js](/backend/src/routes/payment.routes.js#L7-L8)
 
-Ketika user menyelesaikan pembayaran, Midtrans mengirim webhook:
+Ketika user menyelesaikan pembayaran, Midtrans mengirim webhook ke endpoint:
+
+### Routes: Notification Endpoint
 
 ```javascript
-// payment.routes.js - No auth required
+// payment.routes.js - Line 7-8
+// Midtrans notification webhook (no auth required)
 router.post('/notification', paymentController.handleNotification);
 ```
 
-### Service (Backend): Handle Notification
+### Controller: Handle Notification
 
-> **File:** [payment.service.js](/backend/src/services/payment.service.js)
+> **File:** [payment.controller.js](/backend/src/controllers/payment.controller.js#L43-L54)
 
 ```javascript
-// payment.service.js
-const handleMidtransNotification = async (notification) => {
-    const { order_id, transaction_status, fraud_status } = notification;
+// payment.controller.js - Line 43-54
+/**
+ * Handle Midtrans notification (webhook)
+ * POST /api/payment/notification
+ */
+const handleNotification = async (req, res, next) => {
+    try {
+        const result = await paymentService.handleMidtransNotification(req.body);
+        return success(res, result.message);
+    } catch (error) {
+        next(error);
+    }
+};
+```
 
-    const payment = await prisma.payment.findFirst({
-        where: { kodePembayaran: order_id },
-        include: { tagihan: true, user: true }
+### Service (Backend): Handle Midtrans Notification
+
+> **File:** [payment.service.js](/backend/src/services/payment.service.js#L186-L347)
+
+```javascript
+// payment.service.js - Line 186-347
+/**
+ * Handle Midtrans notification
+ */
+const handleMidtransNotification = async (notification) => {
+    const orderId = notification.order_id;
+    const transactionStatus = notification.transaction_status;
+    const fraudStatus = notification.fraud_status;
+
+    const payment = await prisma.payment.findUnique({
+        where: { kodePembayaran: orderId },
+        include: { 
+            user: true, 
+            tagihan: true,
+            riwayatSewa: { include: { kamar: true } }
+        }
     });
 
-    // Determine status
-    let status = payment.status;
-    if (transaction_status === 'settlement' || transaction_status === 'capture') {
-        if (fraud_status === 'accept' || !fraud_status) {
+    if (!payment) {
+        throw { statusCode: 404, message: 'Payment tidak ditemukan' };
+    }
+
+    let status = 'PENDING';
+    let paidAt = null;
+
+    // Determine status from Midtrans response
+    if (transactionStatus === 'capture' || transactionStatus === 'settlement') {
+        if (fraudStatus === 'accept' || !fraudStatus) {
             status = 'SUCCESS';
+            paidAt = new Date();
         }
-    } else if (transaction_status === 'cancel' || transaction_status === 'deny') {
+    } else if (transactionStatus === 'cancel' || transactionStatus === 'deny') {
         status = 'FAILED';
-    } else if (transaction_status === 'expire') {
+    } else if (transactionStatus === 'expire') {
         status = 'EXPIRED';
     }
 
-    // Handle SUCCESS
+    // Handle SUCCESS status
     if (status === 'SUCCESS') {
-        // UPDATE: Payment
+        // Update payment
         await prisma.payment.update({
             where: { id: payment.id },
             data: {
-                status: 'SUCCESS',
-                paidAt: new Date(),
+                status,
+                paidAt,
                 transactionId: notification.transaction_id,
                 paymentMethod: notification.payment_type,
-                paymentGateway: 'Midtrans'
+                paymentGateway: 'Midtrans',
+                vaNumber: notification.va_numbers?.[0]?.va_number,
+                bank: notification.va_numbers?.[0]?.bank
             }
         });
 
-        // UPDATE: Tagihan → LUNAS
+        // Update tagihan status → LUNAS
         await prisma.tagihan.update({
             where: { id: payment.tagihanId },
             data: { status: 'LUNAS' }
         });
 
+        // Check if this is an extension payment - update tanggalBerakhir
+        const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
+        if (isExtension && payment.riwayatSewaId) {
+            const keterangan = payment.tagihan?.keterangan || '';
+            const durationMatch = keterangan.match(/untuk (\d+) bulan/);
+            const extensionMonths = durationMatch ? parseInt(durationMatch[1]) : 0;
+            
+            if (extensionMonths > 0) {
+                const currentSewa = await prisma.riwayatSewa.findUnique({
+                    where: { id: payment.riwayatSewaId }
+                });
+                
+                if (currentSewa) {
+                    const currentEndDate = new Date(currentSewa.tanggalBerakhir);
+                    currentEndDate.setMonth(currentEndDate.getMonth() + extensionMonths);
+                    
+                    await prisma.riwayatSewa.update({
+                        where: { id: payment.riwayatSewaId },
+                        data: { 
+                            tanggalBerakhir: currentEndDate,
+                            durasiBulan: (currentSewa.durasiBulan || 0) + extensionMonths
+                        }
+                    });
+                }
+            }
+        }
+
         // Send email notification
-        await sendPaymentNotification(payment.user.email, {...});
+        try {
+            await sendPaymentNotification(payment.user.email, {
+                name: payment.user.name,
+                kodePembayaran: payment.kodePembayaran,
+                nominal: parseFloat(payment.grossAmount),
+                status: 'berhasil'
+            });
+        } catch (error) {
+            console.error('Failed to send payment notification:', error);
+        }
+    } 
+    // Handle FAILED or EXPIRED status
+    else if (status === 'FAILED' || status === 'EXPIRED') {
+        const isExtension = payment.tagihan?.keterangan?.includes('Perpanjangan');
+        
+        await prisma.$transaction(async (tx) => {
+            // 1. Update payment status
+            await tx.payment.update({
+                where: { id: payment.id },
+                data: {
+                    status,
+                    transactionId: notification.transaction_id,
+                    paymentMethod: notification.payment_type,
+                    paymentGateway: 'Midtrans'
+                }
+            });
+
+            // 2. Update tagihan status to JATUH_TEMPO
+            if (payment.tagihanId) {
+                await tx.tagihan.update({
+                    where: { id: payment.tagihanId },
+                    data: { status: 'JATUH_TEMPO' }
+                });
+            }
+
+            // 3. For new bookings (not extension), update riwayatSewa and kamar
+            if (!isExtension && payment.riwayatSewaId) {
+                await tx.riwayatSewa.update({
+                    where: { id: payment.riwayatSewaId },
+                    data: { 
+                        status: 'DIBATALKAN',
+                        tanggalBerakhir: new Date()
+                    }
+                });
+
+                // Update kamar to TERSEDIA
+                if (payment.riwayatSewa?.kamarId) {
+                    await tx.kamar.update({
+                        where: { id: payment.riwayatSewa.kamarId },
+                        data: { status: 'TERSEDIA' }
+                    });
+                }
+            }
+        });
     }
 
-    return { success: true };
+    return { message: 'Notification processed' };
 };
 ```
 
 **Penjelasan:**
-- Webhook diterima tanpa autentikasi
-- Status payment diupdate berdasarkan response Midtrans
-- Tagihan otomatis berubah menjadi `LUNAS`
-- Email notifikasi dikirim ke pengguna
+- **Webhook tanpa auth**: Midtrans tidak mengirim token autentikasi
+- **Status mapping**:
+  - `capture`/`settlement` → SUCCESS
+  - `cancel`/`deny` → FAILED
+  - `expire` → EXPIRED
+- **SUCCESS flow**:
+  1. UPDATE Payment (status, paidAt, transactionId, paymentMethod, vaNumber, bank)
+  2. UPDATE Tagihan → LUNAS
+  3. Untuk perpanjangan: UPDATE RiwayatSewa (tanggalBerakhir + extensionMonths)
+  4. Kirim email notifikasi
+- **FAILED/EXPIRED flow**:
+  1. UPDATE Payment status
+  2. UPDATE Tagihan → JATUH_TEMPO
+  3. Untuk booking baru: UPDATE RiwayatSewa → DIBATALKAN, Kamar → TERSEDIA
 
 ---
 
